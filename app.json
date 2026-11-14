@@ -1,0 +1,49 @@
+{
+  "expo": {
+    "name": "NEXORA RIDE",
+    "slug": "nexora-ride",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "nexoraride",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.nexoraride.customer"
+    },
+    "android": {
+      "package": "com.nexoraride.customer",
+      "permissions": [
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION"
+      ],
+      "config": {
+        "googleMaps": {
+          "apiKey": ""
+        }
+      },
+      "adaptiveIcon": {
+        "backgroundColor": "#101828",
+        "foregroundImage": "./assets/images/android-icon-foreground.png"
+      },
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "output": "single",
+      "favicon": "./assets/images/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "NEXORA RIDE needs your location to set accurate pickup points and calculate transparent fares."
+        }
+      ],
+      "expo-image"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

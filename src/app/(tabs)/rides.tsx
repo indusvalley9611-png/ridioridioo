@@ -2,9 +2,9 @@
  * NEXORA RIDE — Your Rides Screen (BlaBlaCar & City Rides)
  *
  * Full multi-category trip manager:
- * 1. Booked Carpools: Intercity carpool seats reserved by passenger with digital pass
- * 2. Published Rides: Intercity carpool rides offered by driver with passenger stats
- * 3. City Taxis: Urban on-demand rides (Bike / Auto / Cab) from Phase 3
+ * 1. Upcoming Carpools: Upcoming confirmed bookings
+ * 2. Past Rides: Completed / cancelled bookings
+ * 3. Published Rides: Intercity carpool rides offered by driver with passenger stats
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
@@ -28,17 +28,252 @@ import { CarpoolService } from '@/services/carpoolService';
 import type { Booking } from '@/models/types';
 import type { CarpoolTicket, CarpoolRide } from '@/models/carpool';
 
-type TabView = 'carpools' | 'published' | 'city';
+type TabView = 'upcoming' | 'past' | 'published';
 
+// ─── Helper: format date string ───────────────────────────────────────────────
+function formatRideDate(dateStr: string, timeStr?: string): string {
+  try {
+    const d = new Date(dateStr);
+    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const day = days[d.getDay()];
+    const date = d.getDate();
+    const month = months[d.getMonth()];
+    const base = `${day}, ${date} ${month}`;
+    return timeStr ? `${base} · ${timeStr}` : base;
+  } catch {
+    return dateStr;
+  }
+}
+
+// ─── Helper: avatar color from name ──────────────────────────────────────────
+const AVATAR_COLORS = ['#0284C7', '#7C3AED', '#059669', '#DC2626', '#D97706', '#DB2777'];
+function avatarColor(name: string): string {
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
+}
+
+// ─── Helper: get ticket status info ──────────────────────────────────────────
+function getStatusInfo(status: CarpoolTicket['status']): {
+  label: string;
+  bg: string;
+  textColor: string;
+} {
+  switch (status) {
+    case 'confirmed':
+      return { label: 'Upcoming', bg: colors.infoSoft, textColor: colors.info };
+    case 'boarded':
+      return { label: 'Upcoming', bg: colors.infoSoft, textColor: colors.info };
+    case 'completed':
+      return { label: 'Completed', bg: colors.successSoft, textColor: colors.success };
+    case 'cancelled':
+      return { label: 'Cancelled', bg: colors.errorSoft, textColor: colors.error };
+    default:
+      return { label: status, bg: colors.surfaceMuted, textColor: colors.textSecondary };
+  }
+}
+
+// ─── Ticket Card ─────────────────────────────────────────────────────────────
+interface TicketCardProps {
+  ticket: CarpoolTicket;
+  onViewTicket: () => void;
+  onChat: () => void;
+  onCancel: () => void;
+}
+
+function TicketCard({ ticket, onViewTicket, onChat, onCancel }: TicketCardProps) {
+  const { ride } = ticket;
+  const statusInfo = getStatusInfo(ticket.status);
+  const initials = ride.driver.name
+    .split(' ')
+    .map((w) => w[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase();
+  const bgColor = avatarColor(ride.driver.name);
+
+  return (
+    <TouchableOpacity
+      style={styles.card}
+      activeOpacity={0.88}
+      onPress={onViewTicket}
+    >
+      {/* Card Top Row */}
+      <View style={styles.cardTopRow}>
+        {/* Route */}
+        <View style={styles.routeBlock}>
+          <Text style={styles.routeText}>
+            {ride.origin.city}
+            <Text style={styles.routeArrow}> → </Text>
+            {ride.destination.city}
+          </Text>
+          <Text style={styles.dateTimeText}>
+            {formatRideDate(ride.date, ride.departureTime)}
+          </Text>
+        </View>
+
+        {/* Status Chip */}
+        <View style={[styles.statusChip, { backgroundColor: statusInfo.bg }]}>
+          <Text style={[styles.statusChipText, { color: statusInfo.textColor }]}>
+            {statusInfo.label}
+          </Text>
+        </View>
+      </View>
+
+      {/* Divider */}
+      <View style={styles.divider} />
+
+      {/* Middle: Driver + Price */}
+      <View style={styles.cardMidRow}>
+        {/* Driver Info */}
+        <View style={styles.driverRow}>
+          <View style={[styles.avatar, { backgroundColor: bgColor }]}>
+            <Text style={styles.avatarText}>{initials}</Text>
+          </View>
+          <View>
+            <Text style={styles.driverName}>{ride.driver.name}</Text>
+            <Text style={styles.carInfo}>
+              {ride.car.make} {ride.car.model}
+            </Text>
+          </View>
+        </View>
+
+        {/* Price + Code */}
+        <View style={styles.priceBlock}>
+          <Text style={styles.priceText}>₹{ticket.totalAmount}</Text>
+          <Text style={styles.bookingCode}>{ticket.bookingCode}</Text>
+        </View>
+      </View>
+
+      {/* Quick Actions */}
+      <View style={styles.actionsRow}>
+        <TouchableOpacity style={styles.actionBtn} onPress={onViewTicket}>
+          <Ionicons name="ticket-outline" size={13} color={colors.info} />
+          <Text style={[styles.actionBtnText, { color: colors.info }]}>View Ticket</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.actionBtn} onPress={onChat}>
+          <Ionicons name="chatbubble-ellipses-outline" size={13} color={colors.textSecondary} />
+          <Text style={styles.actionBtnText}>Chat</Text>
+        </TouchableOpacity>
+
+        {(ticket.status === 'confirmed' || ticket.status === 'boarded') && (
+          <TouchableOpacity style={[styles.actionBtn, styles.actionBtnDanger]} onPress={onCancel}>
+            <Ionicons name="close-circle-outline" size={13} color={colors.error} />
+            <Text style={[styles.actionBtnText, { color: colors.error }]}>Cancel</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+    </TouchableOpacity>
+  );
+}
+
+// ─── Published Ride Card ──────────────────────────────────────────────────────
+interface PublishedCardProps {
+  ride: CarpoolRide;
+}
+
+function PublishedCard({ ride }: PublishedCardProps) {
+  const booked = ride.totalSeats - ride.availableSeats;
+  const earnings = booked * ride.pricePerSeat;
+
+  const statusColors: Record<CarpoolRide['status'], { bg: string; text: string; label: string }> = {
+    active: { bg: colors.infoSoft, text: colors.info, label: 'Active' },
+    in_progress: { bg: colors.warningSoft, text: colors.warning, label: 'In Progress' },
+    completed: { bg: colors.successSoft, text: colors.success, label: 'Completed' },
+    cancelled: { bg: colors.errorSoft, text: colors.error, label: 'Cancelled' },
+  };
+  const sc = statusColors[ride.status] ?? statusColors.active;
+
+  return (
+    <View style={styles.card}>
+      {/* Header */}
+      <View style={styles.cardTopRow}>
+        <View style={styles.routeBlock}>
+          <Text style={styles.routeText}>
+            {ride.origin.city}
+            <Text style={styles.routeArrow}> → </Text>
+            {ride.destination.city}
+          </Text>
+          <Text style={styles.dateTimeText}>
+            {formatRideDate(ride.date, ride.departureTime)}
+          </Text>
+        </View>
+        <View style={[styles.statusChip, { backgroundColor: sc.bg }]}>
+          <Text style={[styles.statusChipText, { color: sc.text }]}>{sc.label}</Text>
+        </View>
+      </View>
+
+      <View style={styles.divider} />
+
+      {/* Stats Row */}
+      <View style={styles.publishedStatsRow}>
+        <View style={styles.statBox}>
+          <Text style={styles.statNumber}>{ride.totalSeats}</Text>
+          <Text style={styles.statLabel}>Total Seats</Text>
+        </View>
+        <View style={styles.statBox}>
+          <Text style={styles.statNumber}>{booked}</Text>
+          <Text style={styles.statLabel}>Booked</Text>
+        </View>
+        <View style={styles.statBox}>
+          <Text style={styles.statNumber}>{ride.availableSeats}</Text>
+          <Text style={styles.statLabel}>Available</Text>
+        </View>
+        <View style={styles.statBox}>
+          <Text style={[styles.statNumber, { color: colors.success }]}>₹{earnings}</Text>
+          <Text style={styles.statLabel}>Earnings</Text>
+        </View>
+      </View>
+
+      {/* Passengers Bar */}
+      <View style={styles.passengerBar}>
+        <Ionicons name="people-outline" size={15} color={colors.textSecondary} />
+        <Text style={styles.passengerBarText}>
+          {ride.passengers.length === 0
+            ? 'No passengers booked yet'
+            : `${ride.passengers.length} passenger${ride.passengers.length > 1 ? 's' : ''} booked`}
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+// ─── Empty State ──────────────────────────────────────────────────────────────
+interface EmptyStateProps {
+  emoji: string;
+  title: string;
+  subtitle: string;
+  ctaLabel?: string;
+  onCta?: () => void;
+}
+
+function EmptyState({ emoji, title, subtitle, ctaLabel, onCta }: EmptyStateProps) {
+  return (
+    <View style={styles.emptyContainer}>
+      <Text style={styles.emptyEmoji}>{emoji}</Text>
+      <Text style={styles.emptyTitle}>{title}</Text>
+      <Text style={styles.emptySub}>{subtitle}</Text>
+      {ctaLabel && onCta && (
+        <TouchableOpacity style={styles.ctaBtn} onPress={onCta}>
+          <Text style={styles.ctaBtnText}>{ctaLabel}</Text>
+        </TouchableOpacity>
+      )}
+    </View>
+  );
+}
+
+// ─── Main Screen ──────────────────────────────────────────────────────────────
 export default function MyRidesScreen() {
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<TabView>('carpools');
+  const [activeTab, setActiveTab] = useState<TabView>('upcoming');
 
   // Carpool State
   const [carpoolTickets, setCarpoolTickets] = useState<CarpoolTicket[]>([]);
   const [publishedRides, setPublishedRides] = useState<CarpoolRide[]>([]);
 
-  // City Rides State
+  // City Rides State (kept for data compatibility)
   const [cityBookings, setCityBookings] = useState<Booking[]>([]);
 
   const [isLoading, setIsLoading] = useState(true);
@@ -88,6 +323,20 @@ export default function MyRidesScreen() {
     };
   }, []);
 
+  // Split tickets by status
+  const upcomingTickets = carpoolTickets.filter(
+    (t) => t.status === 'confirmed' || t.status === 'boarded',
+  );
+  const pastTickets = carpoolTickets.filter(
+    (t) => t.status === 'completed' || t.status === 'cancelled',
+  );
+
+  const TAB_DEFS: { key: TabView; label: string }[] = [
+    { key: 'upcoming', label: 'Upcoming' },
+    { key: 'past', label: 'Past' },
+    { key: 'published', label: 'Published' },
+  ];
+
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
       <StatusBar style="dark" />
@@ -99,53 +348,21 @@ export default function MyRidesScreen() {
           <Text style={styles.headerTitle}>Your Rides</Text>
         </View>
 
-        {/* 3-Way Segment Tabs */}
+        {/* 3-Way Pill Tabs */}
         <View style={styles.tabBar}>
-          <TouchableOpacity
-            style={[styles.tabItem, activeTab === 'carpools' && styles.tabItemActive]}
-            onPress={() => setActiveTab('carpools')}
-          >
-            <Ionicons
-              name="ticket"
-              size={14}
-              color={activeTab === 'carpools' ? colors.primary : colors.textTertiary}
-            />
-            <Text
-              style={[styles.tabText, activeTab === 'carpools' && styles.tabTextActive]}
+          {TAB_DEFS.map((tab) => (
+            <TouchableOpacity
+              key={tab.key}
+              style={[styles.tabItem, activeTab === tab.key && styles.tabItemActive]}
+              onPress={() => setActiveTab(tab.key)}
             >
-              Booked ({carpoolTickets.length})
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.tabItem, activeTab === 'published' && styles.tabItemActive]}
-            onPress={() => setActiveTab('published')}
-          >
-            <Ionicons
-              name="car-sport"
-              size={14}
-              color={activeTab === 'published' ? colors.primary : colors.textTertiary}
-            />
-            <Text
-              style={[styles.tabText, activeTab === 'published' && styles.tabTextActive]}
-            >
-              Published ({publishedRides.length})
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.tabItem, activeTab === 'city' && styles.tabItemActive]}
-            onPress={() => setActiveTab('city')}
-          >
-            <Ionicons
-              name="bicycle"
-              size={14}
-              color={activeTab === 'city' ? colors.primary : colors.textTertiary}
-            />
-            <Text style={[styles.tabText, activeTab === 'city' && styles.tabTextActive]}>
-              City Taxi ({cityBookings.length})
-            </Text>
-          </TouchableOpacity>
+              <Text
+                style={[styles.tabText, activeTab === tab.key && styles.tabTextActive]}
+              >
+                {tab.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
         </View>
       </View>
 
@@ -153,7 +370,7 @@ export default function MyRidesScreen() {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
         refreshControl={
-          <RefreshControl refreshing={isRefreshing} onRefresh={handleRefresh} />
+          <RefreshControl refreshing={isRefreshing} onRefresh={handleRefresh} tintColor={colors.accent} />
         }
       >
         {isLoading ? (
@@ -161,217 +378,80 @@ export default function MyRidesScreen() {
             <ActivityIndicator size="large" color={colors.primary} />
             <Text style={styles.loadingText}>Loading your journeys...</Text>
           </View>
-        ) : activeTab === 'carpools' ? (
-          /* ─── TAB 1: BOOKED CARPOOLS ─── */
-          carpoolTickets.length === 0 ? (
-            <View style={styles.emptyContainer}>
-              <Ionicons name="ticket-outline" size={56} color={colors.textTertiary} />
-              <Text style={styles.emptyTitle}>No carpool bookings yet</Text>
-              <Text style={styles.emptySub}>
-                Planning a trip between cities? Find low price rides with verified co-travelers.
-              </Text>
-              <TouchableOpacity
-                style={styles.ctaBtn}
-                onPress={() => router.push('/(tabs)')}
-              >
-                <Ionicons name="search" size={16} color={colors.accentText} />
-                <Text style={styles.ctaBtnText}>Find a Ride</Text>
-              </TouchableOpacity>
-            </View>
+        ) : activeTab === 'upcoming' ? (
+          /* ─── TAB 1: UPCOMING RIDES ─── */
+          upcomingTickets.length === 0 ? (
+            <EmptyState
+              emoji="🚗"
+              title="No upcoming rides"
+              subtitle="No upcoming rides. Search for a carpool!"
+              ctaLabel="Find a Ride"
+              onCta={() => router.push('/(tabs)')}
+            />
           ) : (
-            carpoolTickets.map((ticket) => (
-              <TouchableOpacity
+            upcomingTickets.map((ticket) => (
+              <TicketCard
                 key={ticket.bookingId}
-                style={styles.card}
-                activeOpacity={0.88}
-                onPress={() =>
+                ticket={ticket}
+                onViewTicket={() =>
                   router.push({
                     pathname: '/carpool-ticket' as any,
-                    params: { bookingId: ticket.bookingId },
+                    params: { bookingCode: ticket.bookingCode },
                   })
                 }
-              >
-                <View style={styles.cardHeader}>
-                  <View>
-                    <Text style={styles.bookingRefText}>{ticket.bookingCode}</Text>
-                    <Text style={styles.dateText}>{ticket.ride.date}</Text>
-                  </View>
-                  <View
-                    style={[
-                      styles.statusBadge,
-                      ticket.status === 'confirmed' ? styles.statusConfirmed : styles.statusCancelled,
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.statusBadgeText,
-                        ticket.status === 'confirmed'
-                          ? styles.statusConfirmedText
-                          : styles.statusCancelledText,
-                      ]}
-                    >
-                      {ticket.status.toUpperCase()}
-                    </Text>
-                  </View>
-                </View>
-
-                {/* Route Row */}
-                <View style={styles.routeRow}>
-                  <View style={styles.timeRoute}>
-                    <Text style={styles.timeText}>{ticket.ride.departureTime}</Text>
-                    <Ionicons name="arrow-forward" size={14} color={colors.textTertiary} />
-                    <Text style={styles.timeText}>{ticket.ride.arrivalTime}</Text>
-                  </View>
-                  <Text style={styles.citiesText}>
-                    {ticket.ride.origin.city} → {ticket.ride.destination.city}
-                  </Text>
-                </View>
-
-                {/* Driver & Total Amount */}
-                <View style={styles.cardFooter}>
-                  <View style={styles.driverSnippet}>
-                    <View style={styles.miniAvatar}>
-                      <Text style={styles.miniAvatarText}>
-                        {ticket.ride.driver.name.charAt(0)}
-                      </Text>
-                    </View>
-                    <View>
-                      <Text style={styles.driverSnippetName}>
-                        {ticket.ride.driver.name}
-                      </Text>
-                      <Text style={styles.driverSnippetCar}>
-                        {ticket.ride.car.make} {ticket.ride.car.model}
-                      </Text>
-                    </View>
-                  </View>
-
-                  <View style={{ alignItems: 'flex-end' }}>
-                    <Text style={styles.priceSnippet}>₹{ticket.totalAmount}</Text>
-                    <Text style={styles.seatsSnippet}>
-                      {ticket.seatsBooked} {ticket.seatsBooked === 1 ? 'seat' : 'seats'}
-                    </Text>
-                  </View>
-                </View>
-
-                <View style={styles.viewPassBar}>
-                  <Text style={styles.viewPassText}>View Boarding Pass</Text>
-                  <Ionicons name="chevron-forward" size={14} color="#0284C7" />
-                </View>
-              </TouchableOpacity>
+                onChat={() =>
+                  router.push({
+                    pathname: '/chat' as any,
+                    params: { rideId: ticket.rideId },
+                  })
+                }
+                onCancel={() => {
+                  // Cancel action — extend with confirmation dialog as needed
+                }}
+              />
             ))
           )
-        ) : activeTab === 'published' ? (
-          /* ─── TAB 2: PUBLISHED RIDES ─── */
-          publishedRides.length === 0 ? (
-            <View style={styles.emptyContainer}>
-              <Ionicons name="car-sport-outline" size={56} color={colors.textTertiary} />
-              <Text style={styles.emptyTitle}>No published rides</Text>
-              <Text style={styles.emptySub}>
-                Got empty seats in your car? Share travel costs with co-passengers.
-              </Text>
-              <TouchableOpacity
-                style={styles.ctaBtn}
-                onPress={() => router.push('/(tabs)/publish' as any)}
-              >
-                <Ionicons name="add-circle" size={16} color={colors.accentText} />
-                <Text style={styles.ctaBtnText}>Publish a Ride</Text>
-              </TouchableOpacity>
-            </View>
+        ) : activeTab === 'past' ? (
+          /* ─── TAB 2: PAST RIDES ─── */
+          pastTickets.length === 0 ? (
+            <EmptyState
+              emoji="🏁"
+              title="No past trips yet"
+              subtitle="Your journey starts soon!"
+            />
           ) : (
-            publishedRides.map((ride) => (
-              <View key={ride.id} style={styles.card}>
-                <View style={styles.cardHeader}>
-                  <View>
-                    <Text style={styles.publishedTitle}>
-                      {ride.origin.city} → {ride.destination.city}
-                    </Text>
-                    <Text style={styles.dateText}>
-                      {ride.date} • {ride.departureTime}
-                    </Text>
-                  </View>
-                  <View style={styles.activePill}>
-                    <Text style={styles.activePillText}>ACTIVE</Text>
-                  </View>
-                </View>
-
-                <View style={styles.publishedStatsRow}>
-                  <View style={styles.statBox}>
-                    <Text style={styles.statNumber}>{ride.totalSeats}</Text>
-                    <Text style={styles.statLabel}>Total Seats</Text>
-                  </View>
-                  <View style={styles.statBox}>
-                    <Text style={styles.statNumber}>{ride.availableSeats}</Text>
-                    <Text style={styles.statLabel}>Seats Left</Text>
-                  </View>
-                  <View style={styles.statBox}>
-                    <Text style={styles.statNumber}>₹{ride.pricePerSeat}</Text>
-                    <Text style={styles.statLabel}>Per Seat</Text>
-                  </View>
-                </View>
-
-                <View style={styles.publishedPassengerBar}>
-                  <Ionicons name="people-outline" size={16} color={colors.textSecondary} />
-                  <Text style={styles.publishedPassengerText}>
-                    {ride.passengers.length === 0
-                      ? 'No passengers booked yet'
-                      : `${ride.passengers.length} passenger(s) booked`}
-                  </Text>
-                </View>
-              </View>
+            pastTickets.map((ticket) => (
+              <TicketCard
+                key={ticket.bookingId}
+                ticket={ticket}
+                onViewTicket={() =>
+                  router.push({
+                    pathname: '/carpool-ticket' as any,
+                    params: { bookingCode: ticket.bookingCode },
+                  })
+                }
+                onChat={() =>
+                  router.push({
+                    pathname: '/chat' as any,
+                    params: { rideId: ticket.rideId },
+                  })
+                }
+                onCancel={() => {}}
+              />
             ))
           )
         ) : (
-          /* ─── TAB 3: CITY TAXI / AUTO RIDES ─── */
-          cityBookings.length === 0 ? (
-            <View style={styles.emptyContainer}>
-              <MaterialCommunityIcons name="car-off" size={56} color={colors.textTertiary} />
-              <Text style={styles.emptyTitle}>No city rides yet</Text>
-              <Text style={styles.emptySub}>
-                Book rapid on-demand Bike, Auto or Cab for daily intra-city commutes.
-              </Text>
-              <TouchableOpacity
-                style={styles.ctaBtn}
-                onPress={() => router.push('/(tabs)')}
-              >
-                <Ionicons name="compass" size={16} color={colors.accentText} />
-                <Text style={styles.ctaBtnText}>Request a City Ride</Text>
-              </TouchableOpacity>
-            </View>
+          /* ─── TAB 3: PUBLISHED RIDES ─── */
+          publishedRides.length === 0 ? (
+            <EmptyState
+              emoji="🚦"
+              title="No published rides"
+              subtitle="You haven't published any rides. Share your journey, split fuel costs!"
+              ctaLabel="Publish a Ride"
+              onCta={() => router.push('/(tabs)/publish' as any)}
+            />
           ) : (
-            cityBookings.map((b) => (
-              <TouchableOpacity
-                key={b.id}
-                style={styles.card}
-                activeOpacity={0.88}
-                onPress={() =>
-                  router.push({
-                    pathname: '/ride-status' as any,
-                    params: { bookingId: b.id },
-                  })
-                }
-              >
-                <View style={styles.cardHeader}>
-                  <Text style={styles.cityCategoryTag}>{b.rideCategory.toUpperCase()}</Text>
-                  <View style={styles.statusBadge}>
-                    <Text style={styles.statusBadgeText}>{b.status.toUpperCase()}</Text>
-                  </View>
-                </View>
-
-                <Text style={styles.cityRoute}>
-                  {b.pickup.name} → {b.destination.name}
-                </Text>
-
-                <View style={styles.cityFooter}>
-                  <Text style={styles.cityFareText}>
-                    ₹{b.estimatedFareMin} - ₹{b.estimatedFareMax}
-                  </Text>
-                  <View style={styles.trackLiveRow}>
-                    <Text style={styles.trackLiveText}>Track Live Status</Text>
-                    <Ionicons name="chevron-forward" size={14} color="#0284C7" />
-                  </View>
-                </View>
-              </TouchableOpacity>
-            ))
+            publishedRides.map((ride) => <PublishedCard key={ride.id} ride={ride} />)
           )
         )}
       </ScrollView>
@@ -387,7 +467,7 @@ const styles = StyleSheet.create({
   header: {
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.xs,
-    paddingBottom: spacing.sm,
+    paddingBottom: spacing.md,
     backgroundColor: colors.surface,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
@@ -396,45 +476,47 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: spacing.xs,
+    marginBottom: spacing.sm,
   },
   headerTitle: {
     fontSize: typography.fontSizes.lg,
     fontWeight: typography.fontWeights.heavy,
     color: colors.textPrimary,
   },
+
+  // ── Pill Tab Bar ──
   tabBar: {
     flexDirection: 'row',
     backgroundColor: colors.surfaceMuted,
     borderRadius: borderRadius.pill,
     padding: 3,
-    marginTop: spacing.xs,
   },
   tabItem: {
     flex: 1,
-    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 4,
-    paddingVertical: 7,
+    paddingVertical: 8,
     borderRadius: borderRadius.pill,
   },
   tabItemActive: {
-    backgroundColor: colors.surface,
+    backgroundColor: colors.accent,
     ...shadows.sm,
   },
   tabText: {
-    fontSize: 11,
+    fontSize: typography.fontSizes.xs,
     fontWeight: typography.fontWeights.medium,
     color: colors.textTertiary,
   },
   tabTextActive: {
-    color: colors.textPrimary,
+    color: colors.accentText,
     fontWeight: typography.fontWeights.bold,
   },
+
+  // ── Scroll ──
   scrollContent: {
     padding: spacing.lg,
     paddingBottom: spacing.huge,
+    flexGrow: 1,
   },
   centerContainer: {
     flex: 1,
@@ -447,34 +529,39 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSizes.sm,
     color: colors.textSecondary,
   },
+
+  // ── Empty State ──
   emptyContainer: {
     alignItems: 'center',
     justifyContent: 'center',
-    padding: spacing.xxl,
-    marginTop: spacing.xl,
+    paddingVertical: spacing.huge,
+    paddingHorizontal: spacing.xxl,
+  },
+  emptyEmoji: {
+    fontSize: 48,
+    marginBottom: spacing.md,
   },
   emptyTitle: {
-    fontSize: typography.fontSizes.lg,
+    fontSize: typography.fontSizes.md,
     fontWeight: typography.fontWeights.bold,
     color: colors.textPrimary,
-    marginTop: spacing.md,
+    marginBottom: spacing.xs,
+    textAlign: 'center',
   },
   emptySub: {
     fontSize: typography.fontSizes.sm,
     color: colors.textSecondary,
     textAlign: 'center',
-    marginTop: spacing.xs,
-    marginBottom: spacing.xl,
     lineHeight: 20,
+    marginBottom: spacing.xl,
   },
   ctaBtn: {
     backgroundColor: colors.accent,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
     paddingHorizontal: spacing.xl,
     height: 48,
     borderRadius: borderRadius.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
     ...shadows.sm,
   },
   ctaBtnText: {
@@ -482,6 +569,8 @@ const styles = StyleSheet.create({
     fontWeight: typography.fontWeights.bold,
     color: colors.accentText,
   },
+
+  // ── Ticket Card ──
   card: {
     backgroundColor: colors.surface,
     borderRadius: borderRadius.xl,
@@ -489,145 +578,128 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
     borderWidth: 1,
     borderColor: colors.border,
-    ...shadows.sm,
+    ...shadows.md,
   },
-  cardHeader: {
+  cardTopRow: {
     flexDirection: 'row',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
-    alignItems: 'center',
     marginBottom: spacing.sm,
   },
-  bookingRefText: {
-    fontSize: typography.fontSizes.sm,
-    fontWeight: typography.fontWeights.heavy,
-    color: '#0284C7',
+  routeBlock: {
+    flex: 1,
+    marginRight: spacing.sm,
   },
-  dateText: {
-    fontSize: 11,
-    color: colors.textTertiary,
-    marginTop: 1,
-  },
-  statusBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: borderRadius.pill,
-    backgroundColor: colors.surfaceMuted,
-  },
-  statusConfirmed: {
-    backgroundColor: '#ECFDF5',
-  },
-  statusCancelled: {
-    backgroundColor: '#FEF2F2',
-  },
-  statusBadgeText: {
-    fontSize: 10,
-    fontWeight: typography.fontWeights.bold,
-    color: colors.textSecondary,
-  },
-  statusConfirmedText: {
-    color: '#059669',
-  },
-  statusCancelledText: {
-    color: '#EF4444',
-  },
-  routeRow: {
-    marginVertical: spacing.xs,
-  },
-  timeRoute: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-  },
-  timeText: {
-    fontSize: typography.fontSizes.sm,
-    fontWeight: typography.fontWeights.bold,
-    color: colors.textPrimary,
-  },
-  citiesText: {
+  routeText: {
     fontSize: typography.fontSizes.base,
     fontWeight: typography.fontWeights.heavy,
     color: colors.textPrimary,
+  },
+  routeArrow: {
+    color: colors.textTertiary,
+    fontWeight: typography.fontWeights.regular,
+  },
+  dateTimeText: {
+    fontSize: typography.fontSizes.xs,
+    color: colors.textTertiary,
     marginTop: 2,
   },
-  cardFooter: {
+  statusChip: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 3,
+    borderRadius: borderRadius.pill,
+    alignSelf: 'flex-start',
+  },
+  statusChipText: {
+    fontSize: typography.fontSizes.xs,
+    fontWeight: typography.fontWeights.bold,
+  },
+  divider: {
+    height: 1,
+    backgroundColor: colors.border,
+    marginVertical: spacing.sm,
+  },
+  cardMidRow: {
     flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: spacing.sm,
-    paddingTop: spacing.sm,
-    borderTopWidth: 1,
-    borderTopColor: colors.surfaceMuted,
+    marginBottom: spacing.sm,
   },
-  driverSnippet: {
+  driverRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.xs,
+    gap: spacing.sm,
   },
-  miniAvatar: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: '#0284C7',
+  avatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  miniAvatarText: {
+  avatarText: {
     color: '#FFFFFF',
     fontWeight: typography.fontWeights.bold,
     fontSize: typography.fontSizes.xs,
   },
-  driverSnippetName: {
-    fontSize: typography.fontSizes.xs,
-    fontWeight: typography.fontWeights.bold,
+  driverName: {
+    fontSize: typography.fontSizes.sm,
+    fontWeight: typography.fontWeights.semibold,
     color: colors.textPrimary,
   },
-  driverSnippetCar: {
+  carInfo: {
     fontSize: 10,
     color: colors.textTertiary,
+    marginTop: 1,
   },
-  priceSnippet: {
+  priceBlock: {
+    alignItems: 'flex-end',
+  },
+  priceText: {
     fontSize: typography.fontSizes.md,
     fontWeight: typography.fontWeights.heavy,
     color: colors.textPrimary,
   },
-  seatsSnippet: {
+  bookingCode: {
     fontSize: 10,
-    color: colors.textTertiary,
+    fontWeight: typography.fontWeights.semibold,
+    color: colors.info,
+    marginTop: 2,
   },
-  viewPassBar: {
+
+  // ── Quick Actions ──
+  actionsRow: {
+    flexDirection: 'row',
+    gap: spacing.xs,
+    paddingTop: spacing.xs,
+    borderTopWidth: 1,
+    borderTopColor: colors.surfaceMuted,
+  },
+  actionBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: '#EFF6FF',
+    gap: 4,
+    backgroundColor: colors.surfaceMuted,
     paddingHorizontal: spacing.sm,
     paddingVertical: 6,
-    borderRadius: borderRadius.md,
-    marginTop: spacing.sm,
+    borderRadius: borderRadius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
-  viewPassText: {
+  actionBtnDanger: {
+    backgroundColor: colors.errorSoft,
+    borderColor: '#FECACA',
+  },
+  actionBtnText: {
     fontSize: 11,
-    fontWeight: typography.fontWeights.bold,
-    color: '#0284C7',
+    fontWeight: typography.fontWeights.semibold,
+    color: colors.textSecondary,
   },
-  publishedTitle: {
-    fontSize: typography.fontSizes.base,
-    fontWeight: typography.fontWeights.heavy,
-    color: colors.textPrimary,
-  },
-  activePill: {
-    backgroundColor: '#ECFDF5',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: borderRadius.pill,
-  },
-  activePillText: {
-    fontSize: 10,
-    fontWeight: typography.fontWeights.bold,
-    color: '#059669',
-  },
+
+  // ── Published Card ──
   publishedStatsRow: {
     flexDirection: 'row',
-    gap: spacing.sm,
+    gap: spacing.xs,
     marginVertical: spacing.sm,
   },
   statBox: {
@@ -638,55 +710,26 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   statNumber: {
-    fontSize: typography.fontSizes.base,
+    fontSize: typography.fontSizes.sm,
     fontWeight: typography.fontWeights.heavy,
     color: colors.textPrimary,
   },
   statLabel: {
-    fontSize: 10,
+    fontSize: 9,
     color: colors.textTertiary,
     marginTop: 1,
+    textAlign: 'center',
   },
-  publishedPassengerBar: {
+  passengerBar: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.xs,
     paddingTop: spacing.xs,
+    borderTopWidth: 1,
+    borderTopColor: colors.surfaceMuted,
   },
-  publishedPassengerText: {
+  passengerBarText: {
     fontSize: 11,
     color: colors.textSecondary,
-  },
-  cityCategoryTag: {
-    fontSize: 11,
-    fontWeight: typography.fontWeights.bold,
-    color: colors.primary,
-  },
-  cityRoute: {
-    fontSize: typography.fontSizes.sm,
-    fontWeight: typography.fontWeights.semibold,
-    color: colors.textPrimary,
-    marginVertical: spacing.xs,
-  },
-  cityFooter: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: spacing.xs,
-  },
-  cityFareText: {
-    fontSize: typography.fontSizes.sm,
-    fontWeight: typography.fontWeights.bold,
-    color: colors.textPrimary,
-  },
-  trackLiveRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 2,
-  },
-  trackLiveText: {
-    fontSize: 11,
-    fontWeight: typography.fontWeights.bold,
-    color: '#0284C7',
   },
 });

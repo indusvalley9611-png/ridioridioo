@@ -26,13 +26,45 @@ import { CarpoolService } from '@/services/carpoolService';
 import type { ChatMessage, CarpoolRide } from '@/models/carpool';
 import { triggerHaptic } from '@/utils/haptics';
 
+// ─── Quick Reply Chips ────────────────────────────────────────────────────────
 const QUICK_CHIPS = [
-  '📍 Where should we meet at the toll?',
-  '🎒 I have 1 backpack + laptop bag',
-  '☕ Will we stop for coffee/restroom?',
-  '⏰ I am 5 minutes away!',
+  '📍 Where to meet?',
+  '⏰ I\'m 5 min away',
+  '🎒 1 bag, no large luggage',
+  '☕ Coffee break?',
+  '✅ Confirmed!',
+  '🆘 Need help',
 ];
 
+// ─── Helper: avatar color from name ──────────────────────────────────────────
+const AVATAR_COLORS = ['#0284C7', '#7C3AED', '#059669', '#DC2626', '#D97706', '#DB2777'];
+function avatarColor(name: string): string {
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
+}
+
+// ─── Helper: group messages by time ──────────────────────────────────────────
+interface MessageGroup {
+  timeLabel: string;
+  messages: ChatMessage[];
+}
+
+function groupMessagesByTime(messages: ChatMessage[]): MessageGroup[] {
+  const groups: MessageGroup[] = [];
+  messages.forEach((msg) => {
+    const label = msg.timestamp || '';
+    const last = groups[groups.length - 1];
+    if (last && last.timeLabel === label) {
+      last.messages.push(msg);
+    } else {
+      groups.push({ timeLabel: label, messages: [msg] });
+    }
+  });
+  return groups;
+}
+
+// ─── Main Screen ──────────────────────────────────────────────────────────────
 export default function ChatScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ rideId?: string }>();
@@ -98,6 +130,13 @@ export default function ChatScreen() {
 
   const driverName = ride?.driver.name || 'Driver';
   const carInfo = ride ? `${ride.car.make} ${ride.car.model} • ${ride.car.color}` : 'Car';
+  const driverInitials = driverName
+    .split(' ')
+    .map((w) => w[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase();
+  const driverAvatarColor = avatarColor(driverName);
 
   const handleBack = () => {
     if (router.canGoBack()) {
@@ -107,23 +146,38 @@ export default function ChatScreen() {
     }
   };
 
+  const messageGroups = groupMessagesByTime(messages);
+
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
-      {/* Top Header */}
+      {/* ── Top Header ── */}
       <View style={styles.header}>
         <TouchableOpacity style={styles.backBtn} onPress={handleBack} accessibilityLabel="Back">
           <Ionicons name="arrow-back" size={22} color={colors.textPrimary} />
         </TouchableOpacity>
 
-        <View style={styles.driverHeaderCol}>
-          <Text style={styles.driverNameText}>{driverName}</Text>
-          <Text style={styles.carInfoText} numberOfLines={1}>
-            {carInfo} {ride?.car.licensePlate ? `• ${ride.car.licensePlate}` : ''}
-          </Text>
+        {/* Driver Avatar */}
+        <View style={[styles.headerAvatar, { backgroundColor: driverAvatarColor }]}>
+          <Text style={styles.headerAvatarText}>{driverInitials}</Text>
         </View>
 
+        {/* Driver Info */}
+        <View style={styles.driverHeaderCol}>
+          <Text style={styles.driverNameText}>{driverName}</Text>
+          <View style={styles.onlineRow}>
+            <View style={styles.onlineDot} />
+            <Text style={styles.onlineText}>Online</Text>
+            <Text style={styles.carInfoText} numberOfLines={1}>
+              {' · '}
+              {carInfo}
+              {ride?.car.licensePlate ? ` · ${ride.car.licensePlate}` : ''}
+            </Text>
+          </View>
+        </View>
+
+        {/* Call Button */}
         <TouchableOpacity style={styles.callBtn} onPress={handleCall} accessibilityLabel="Call driver">
-          <Ionicons name="call" size={18} color="#059669" />
+          <Ionicons name="call" size={18} color={colors.success} />
         </TouchableOpacity>
       </View>
 
@@ -131,7 +185,7 @@ export default function ChatScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={{ flex: 1 }}
       >
-        {/* Messages List */}
+        {/* ── Messages List ── */}
         <ScrollView
           ref={scrollRef}
           contentContainerStyle={styles.messagesList}
@@ -140,50 +194,83 @@ export default function ChatScreen() {
         >
           {/* Safety Notice */}
           <View style={styles.safetyNotice}>
-            <Ionicons name="lock-closed" size={14} color="#059669" />
+            <Ionicons name="lock-closed" size={12} color={colors.success} />
             <Text style={styles.safetyNoticeText}>
               End-to-end encrypted carpool chat. Never share private bank OTPs.
             </Text>
           </View>
 
-          {messages.map((msg) => {
-            const isMe = msg.sender === 'passenger';
-            return (
-              <View
-                key={msg.id}
-                style={[
-                  styles.messageBubble,
-                  isMe ? styles.messageBubbleUser : styles.messageBubbleDriver,
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.messageText,
-                    isMe ? styles.messageTextUser : styles.messageTextDriver,
-                  ]}
-                >
-                  {msg.text}
-                </Text>
-                <View style={styles.messageFooter}>
-                  <Text style={styles.timestampText}>{msg.timestamp}</Text>
-                  {isMe && (
-                    <Ionicons name="checkmark-done" size={13} color={colors.accentText} />
-                  )}
+          {/* Message Groups with Timestamps */}
+          {messageGroups.map((group, gi) => (
+            <View key={gi}>
+              {/* Time Label */}
+              {group.timeLabel ? (
+                <View style={styles.timeLabelRow}>
+                  <Text style={styles.timeLabelText}>{group.timeLabel}</Text>
                 </View>
-              </View>
-            );
-          })}
+              ) : null}
+
+              {group.messages.map((msg) => {
+                const isMe = msg.sender === 'passenger';
+                return (
+                  <View
+                    key={msg.id}
+                    style={[
+                      styles.messageBubbleWrap,
+                      isMe ? styles.messageBubbleWrapUser : styles.messageBubbleWrapDriver,
+                    ]}
+                  >
+                    {/* Driver small avatar */}
+                    {!isMe && (
+                      <View style={[styles.msgAvatar, { backgroundColor: driverAvatarColor }]}>
+                        <Text style={styles.msgAvatarText}>{driverInitials}</Text>
+                      </View>
+                    )}
+
+                    <View
+                      style={[
+                        styles.messageBubble,
+                        isMe ? styles.messageBubbleUser : styles.messageBubbleDriver,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.messageText,
+                          isMe ? styles.messageTextUser : styles.messageTextDriver,
+                        ]}
+                      >
+                        {msg.text}
+                      </Text>
+                      <View style={styles.messageFooter}>
+                        {isMe && (
+                          <Ionicons
+                            name={msg.status === 'read' ? 'checkmark-done' : 'checkmark'}
+                            size={12}
+                            color={colors.accentText}
+                          />
+                        )}
+                      </View>
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+          ))}
         </ScrollView>
 
-        {/* Quick Suggestion Chips */}
-        <View style={styles.chipsContainer}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+        {/* ── Quick Reply Chips ── */}
+        <View style={styles.chipsBar}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.chipsScroll}
+          >
             {QUICK_CHIPS.map((chip, idx) => (
               <TouchableOpacity
                 key={idx}
                 style={styles.chip}
                 onPress={() => handleSend(chip)}
-                activeOpacity={0.8}
+                activeOpacity={0.75}
               >
                 <Text style={styles.chipText}>{chip}</Text>
               </TouchableOpacity>
@@ -191,7 +278,7 @@ export default function ChatScreen() {
           </ScrollView>
         </View>
 
-        {/* Text Input Row */}
+        {/* ── Input Bar ── */}
         <View style={styles.inputContainer}>
           <TextInput
             style={styles.input}
@@ -207,7 +294,7 @@ export default function ChatScreen() {
             onPress={() => handleSend()}
             disabled={!inputText.trim() || isSending}
           >
-            <Ionicons name="send" size={18} color={colors.accentText} />
+            <Ionicons name="arrow-up" size={20} color={colors.accentText} />
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
@@ -220,6 +307,8 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
   },
+
+  // ── Header ──
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -228,6 +317,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
+    gap: spacing.sm,
   },
   backBtn: {
     width: 38,
@@ -237,28 +327,58 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  headerAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerAvatarText: {
+    color: '#FFFFFF',
+    fontWeight: typography.fontWeights.bold,
+    fontSize: typography.fontSizes.sm,
+  },
   driverHeaderCol: {
     flex: 1,
-    marginHorizontal: spacing.md,
   },
   driverNameText: {
     fontSize: typography.fontSizes.base,
     fontWeight: typography.fontWeights.heavy,
     color: colors.textPrimary,
   },
-  carInfoText: {
-    fontSize: 11,
-    color: colors.textSecondary,
+  onlineRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     marginTop: 1,
   },
+  onlineDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: colors.success,
+    marginRight: 4,
+  },
+  onlineText: {
+    fontSize: 11,
+    fontWeight: typography.fontWeights.semibold,
+    color: colors.success,
+  },
+  carInfoText: {
+    fontSize: 10,
+    color: colors.textTertiary,
+    flexShrink: 1,
+  },
   callBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: '#ECFDF5',
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.successSoft,
     alignItems: 'center',
     justifyContent: 'center',
   },
+
+  // ── Messages ──
   messagesList: {
     padding: spacing.lg,
     paddingBottom: spacing.sm,
@@ -267,8 +387,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
-    backgroundColor: '#ECFDF5',
+    gap: 5,
+    backgroundColor: colors.successSoft,
     paddingHorizontal: spacing.md,
     paddingVertical: 6,
     borderRadius: borderRadius.pill,
@@ -278,26 +398,66 @@ const styles = StyleSheet.create({
   safetyNoticeText: {
     fontSize: 10,
     fontWeight: typography.fontWeights.semibold,
-    color: '#059669',
+    color: colors.success,
+  },
+
+  // Timestamp group label
+  timeLabelRow: {
+    alignItems: 'center',
+    marginVertical: spacing.sm,
+  },
+  timeLabelText: {
+    fontSize: 10,
+    color: colors.textTertiary,
+    backgroundColor: colors.surfaceMuted,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 3,
+    borderRadius: borderRadius.pill,
+    fontWeight: typography.fontWeights.medium,
+  },
+
+  // Message bubble layout
+  messageBubbleWrap: {
+    flexDirection: 'row',
+    marginBottom: spacing.xs,
+    alignItems: 'flex-end',
+  },
+  messageBubbleWrapUser: {
+    justifyContent: 'flex-end',
+  },
+  messageBubbleWrapDriver: {
+    justifyContent: 'flex-start',
+  },
+  msgAvatar: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 6,
+    marginBottom: 2,
+  },
+  msgAvatarText: {
+    color: '#FFFFFF',
+    fontWeight: typography.fontWeights.bold,
+    fontSize: 9,
   },
   messageBubble: {
-    maxWidth: '80%',
-    padding: spacing.md,
+    maxWidth: '75%',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
     borderRadius: borderRadius.lg,
-    marginBottom: spacing.sm,
     ...shadows.sm,
   },
   messageBubbleUser: {
-    alignSelf: 'flex-end',
     backgroundColor: colors.accent,
-    borderBottomRightRadius: 2,
+    borderBottomRightRadius: 3,
   },
   messageBubbleDriver: {
-    alignSelf: 'flex-start',
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
-    borderBottomLeftRadius: 2,
+    borderBottomLeftRadius: 3,
   },
   messageText: {
     fontSize: typography.fontSizes.sm,
@@ -314,34 +474,37 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'flex-end',
-    gap: 4,
-    marginTop: 4,
+    marginTop: 3,
+    gap: 2,
   },
-  timestampText: {
-    fontSize: 9,
-    color: colors.textTertiary,
-  },
-  chipsContainer: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-    backgroundColor: colors.surface,
+
+  // ── Quick Chips ──
+  chipsBar: {
+    backgroundColor: colors.accentSoft,
     borderTopWidth: 1,
-    borderTopColor: colors.surfaceMuted,
+    borderTopColor: colors.border,
+    paddingVertical: spacing.xs,
+  },
+  chipsScroll: {
+    paddingHorizontal: spacing.md,
+    gap: spacing.xs,
   },
   chip: {
-    backgroundColor: colors.surfaceMuted,
+    backgroundColor: colors.surface,
     paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingVertical: 7,
     borderRadius: borderRadius.pill,
+    borderWidth: 1.5,
+    borderColor: colors.accent,
     marginRight: spacing.xs,
-    borderWidth: 1,
-    borderColor: colors.border,
   },
   chipText: {
     fontSize: 11,
-    color: colors.textSecondary,
-    fontWeight: typography.fontWeights.medium,
+    color: colors.accentText,
+    fontWeight: typography.fontWeights.semibold,
   },
+
+  // ── Input Bar ──
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -350,17 +513,19 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     borderTopWidth: 1,
     borderTopColor: colors.border,
+    gap: spacing.sm,
   },
   input: {
     flex: 1,
     backgroundColor: colors.surfaceMuted,
     borderRadius: borderRadius.pill,
     paddingHorizontal: spacing.md,
-    paddingVertical: 8,
+    paddingVertical: 10,
     maxHeight: 90,
     fontSize: typography.fontSizes.sm,
     color: colors.textPrimary,
-    marginRight: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
   sendBtn: {
     width: 44,
@@ -369,7 +534,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.accent,
     alignItems: 'center',
     justifyContent: 'center',
-    ...shadows.sm,
+    ...shadows.glowLime,
   },
   sendBtnDisabled: {
     opacity: 0.4,

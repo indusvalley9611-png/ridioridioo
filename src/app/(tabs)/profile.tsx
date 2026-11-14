@@ -1,5 +1,5 @@
 /**
- * NEXORA RIDE — Profile Screen (Production-Ready & Multi-Language)
+ * NEXORA RIDE — Profile Screen (Best-in-class UX Redesign)
  *
  * Full real-world functionality:
  * - Reactive multi-language switching across all 8 Indian languages
@@ -31,6 +31,23 @@ import { kycService, DriverKycProfile, UserPersonalProfile } from '@/services/ky
 import { useLanguage } from '@/context/LanguageContext';
 import { SupportedLanguage } from '@/services/i18nService';
 
+// ── Avatar background colors derived from name initial ──────────────────────
+const AVATAR_COLORS = [
+  '#6366F1', '#8B5CF6', '#EC4899', '#EF4444',
+  '#F59E0B', '#10B981', '#14B8A6', '#3B82F6',
+];
+function getAvatarColor(name: string): string {
+  const idx = name.charCodeAt(0) % AVATAR_COLORS.length;
+  return AVATAR_COLORS[idx] ?? '#6366F1';
+}
+
+// ── Mock reviews ─────────────────────────────────────────────────────────────
+const MOCK_REVIEWS = [
+  { id: '1', reviewer: 'Priya S.', rating: 5, comment: 'Great co-passenger! Very punctual and pleasant to travel with.', date: 'Nov 2024' },
+  { id: '2', reviewer: 'Rahul M.', rating: 5, comment: 'Smooth ride, good conversation. Would share again!', date: 'Oct 2024' },
+  { id: '3', reviewer: 'Anjali K.', rating: 4, comment: 'Arrived on time, polite and tidy. Recommended!', date: 'Sep 2024' },
+];
+
 export default function ProfileScreen() {
   const router = useRouter();
   const { language, setLanguage, t, supportedLanguages } = useLanguage();
@@ -48,6 +65,12 @@ export default function ProfileScreen() {
   const [editName, setEditName] = useState('');
   const [editPhone, setEditPhone] = useState('');
   const [savingProfile, setSavingProfile] = useState(false);
+
+  // Language modal
+  const [isLangModalOpen, setIsLangModalOpen] = useState(false);
+
+  // PIN reveal toggle
+  const [pinRevealed, setPinRevealed] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -74,6 +97,7 @@ export default function ProfileScreen() {
 
   const handleSelectLanguage = async (code: SupportedLanguage) => {
     await setLanguage(code);
+    setIsLangModalOpen(false);
   };
 
   const handleSaveProfile = async () => {
@@ -116,6 +140,17 @@ export default function ProfileScreen() {
   const displayPhone = userProfile.phone || kycProfile?.phone || '';
   const initial = displayName ? displayName.charAt(0).toUpperCase() : '+';
   const isKycVerified = kycProfile?.status === 'verified';
+  const avatarBg = getAvatarColor(displayName || 'N');
+
+  // Verification status config
+  const verifStatus = isKycVerified ? 'verified' : kycProfile ? 'pending' : 'not_submitted';
+  const verifConfig = {
+    verified: { bg: colors.successSoft, border: '#6EE7B7', label: '✅ Identity Verified', labelColor: '#059669' },
+    pending: { bg: colors.warningSoft, border: '#FCD34D', label: '⏳ Verification Pending', labelColor: '#D97706' },
+    not_submitted: { bg: colors.errorSoft, border: '#FCA5A5', label: '❗ Not Submitted', labelColor: colors.error },
+  }[verifStatus];
+
+  const activeLangName = supportedLanguages.find((l) => l.code === language)?.nativeName ?? 'English';
 
   return (
     <SafeAreaView edges={['top']} style={styles.safeArea}>
@@ -124,28 +159,28 @@ export default function ProfileScreen() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
       >
-        {/* ── User Card ── */}
-        <View style={styles.userCard}>
+        {/* ── HERO PROFILE HEADER ── */}
+        <View style={styles.heroCard}>
+          {/* Avatar with lime ring */}
           <TouchableOpacity
-            style={styles.avatar}
+            style={styles.avatarWrapper}
             onPress={() => {
               setEditName(displayName);
               setEditPhone(displayPhone);
               setIsEditModalOpen(true);
             }}
           >
-            <Text style={styles.avatarText}>{initial}</Text>
+            <View style={[styles.avatarRing]}>
+              <View style={[styles.avatar, { backgroundColor: avatarBg }]}>
+                <Text style={styles.avatarText}>{initial}</Text>
+              </View>
+            </View>
           </TouchableOpacity>
-          <View style={styles.userInfo}>
+
+          {/* Name + phone + edit icon */}
+          <View style={styles.heroInfo}>
             <View style={styles.nameRow}>
-              <Text
-                style={[styles.userName, !displayName && styles.userNamePlaceholder]}
-                onPress={() => {
-                  setEditName(displayName);
-                  setEditPhone(displayPhone);
-                  setIsEditModalOpen(true);
-                }}
-              >
+              <Text style={[styles.heroName, !displayName && styles.heroNamePlaceholder]} numberOfLines={1}>
                 {displayName || 'Tap to set your Name'}
               </Text>
               <TouchableOpacity
@@ -156,202 +191,122 @@ export default function ProfileScreen() {
                 }}
                 style={styles.editPencilBtn}
               >
-                <Ionicons name="pencil" size={15} color={colors.primary} />
+                <Ionicons name="pencil" size={14} color={colors.primary} />
               </TouchableOpacity>
             </View>
-            <Text
-              style={[styles.userPhone, !displayPhone && styles.userPhonePlaceholder]}
-              onPress={() => {
-                setEditName(displayName);
-                setEditPhone(displayPhone);
-                setIsEditModalOpen(true);
-              }}
-            >
-              {displayPhone || 'Tap to add your phone number'}
-            </Text>
-            <View style={styles.ratingRow}>
-              <Ionicons name="star" size={13} color="#F59E0B" />
-              <Text style={styles.ratingText}>5.0 (0 {t('rides_count')})</Text>
-              <View style={[styles.verifiedChip, isKycVerified ? styles.verifiedChipGreen : styles.verifiedChipOrange]}>
-                <Ionicons
-                  name={isKycVerified ? 'checkmark-circle' : 'shield-outline'}
-                  size={12}
-                  color={isKycVerified ? '#059669' : '#D97706'}
-                />
-                <Text
-                  style={[
-                    styles.verifiedChipText,
-                    { color: isKycVerified ? '#059669' : '#D97706' },
-                  ]}
-                >
-                  {isKycVerified ? t('verified') : t('not_verified')}
-                </Text>
-              </View>
-            </View>
-          </View>
-        </View>
-
-        {/* ── Regional Language Selector (India) ── */}
-        <View style={styles.card}>
-          <View style={styles.cardHeaderRow}>
-            <Text style={styles.cardTitle}>{t('app_language')} (ಭಾರತೀಯ ಭಾಷೆಗಳು)</Text>
-            <Text style={styles.langActiveBadge}>
-              {supportedLanguages.find((l) => l.code === language)?.nativeName}
+            <Text style={[styles.heroPhone, !displayPhone && styles.heroPhonePlaceholder]}>
+              {displayPhone || 'Add phone number'}
             </Text>
           </View>
-          <Text style={styles.langSubtitle}>
-            {t('select_pref_lang')}
-          </Text>
-          <View style={styles.langGrid}>
-            {supportedLanguages.map((lang) => {
-              const isSelected = language === lang.code;
-              return (
-                <TouchableOpacity
-                  key={lang.code}
-                  style={[styles.langChip, isSelected && styles.langChipActive]}
-                  onPress={() => handleSelectLanguage(lang.code)}
-                  activeOpacity={0.8}
-                >
-                  <Text style={[styles.langNativeText, isSelected && styles.langNativeTextActive]}>
-                    {lang.nativeName}
-                  </Text>
-                  <Text style={[styles.langEnglishText, isSelected && styles.langEnglishTextActive]}>
-                    {lang.name}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        </View>
 
-        {/* ── Wallet & Impact ── */}
-        <View style={styles.walletCard}>
-          <View style={styles.walletRow}>
-            <View>
-              <Text style={styles.walletLabel}>{t('wallet')}</Text>
-              <Text style={styles.walletAmount}>₹0.00</Text>
+          {/* 3 Stat chips row */}
+          <View style={styles.statChipsRow}>
+            <View style={styles.statChip}>
+              <Text style={styles.statChipText}>⭐ 4.8 Rating</Text>
             </View>
-            <TouchableOpacity
-              style={styles.topUpBtn}
-              onPress={() => Alert.alert('NEXORA Wallet', 'Instant UPI Payouts & Top-ups available.')}
-            >
-              <Ionicons name="add" size={16} color={colors.accentText} />
-              <Text style={styles.topUpBtnText}>{t('top_up')}</Text>
-            </TouchableOpacity>
-          </View>
-          <View style={styles.statsRow}>
-            <View style={styles.statItem}>
-              <Ionicons name="leaf" size={14} color="#059669" />
-              <Text style={styles.statValue}>0 kg</Text>
-              <Text style={styles.statLabel}>{t('co2_saved')}</Text>
+            <View style={styles.statChipDivider} />
+            <View style={styles.statChip}>
+              <Text style={styles.statChipText}>🛣 23 Trips</Text>
             </View>
-            <View style={styles.statDivider} />
-            <View style={styles.statItem}>
-              <Ionicons name="water" size={14} color="#0284C7" />
-              <Text style={styles.statValue}>0 L</Text>
-              <Text style={styles.statLabel}>{t('fuel_shared')}</Text>
-            </View>
-            <View style={styles.statDivider} />
-            <View style={styles.statItem}>
-              <Ionicons name="shield-checkmark" size={14} color="#D97706" />
-              <Text style={styles.statValue}>100%</Text>
-              <Text style={styles.statLabel}>{t('punctuality')}</Text>
+            <View style={styles.statChipDivider} />
+            <View style={styles.statChip}>
+              <Text style={[styles.statChipText, { color: isKycVerified ? '#059669' : colors.warning }]}>
+                {isKycVerified ? '✅ Verified' : '⚠️ Unverified'}
+              </Text>
             </View>
           </View>
         </View>
 
-        {/* ── Identity & Driver Verification ── */}
-        <View style={styles.card}>
-          <View style={styles.cardHeaderRow}>
-            <Text style={styles.cardTitle}>{t('identity_verification')}</Text>
+        {/* ── VERIFICATION STATUS CARD ── */}
+        <View style={[styles.verifStatusCard, { backgroundColor: verifConfig.bg, borderColor: verifConfig.border }]}>
+          <View style={styles.verifStatusHeader}>
+            <Text style={[styles.verifStatusLabel, { color: verifConfig.labelColor }]}>
+              {verifConfig.label}
+            </Text>
             <TouchableOpacity onPress={() => router.push('/driver-verification' as any)}>
-              <Text style={styles.editLink}>{t('manage')}</Text>
+              <Text style={[styles.manageLink, { color: verifConfig.labelColor }]}>{t('manage')}</Text>
             </TouchableOpacity>
           </View>
-          {[
-            {
-              icon: 'shield-checkmark-outline' as const,
-              title: t('driver_kyc_license'),
-              sub: isKycVerified
-                ? `DL: ${kycProfile?.drivingLicenseNumber}`
-                : t('action_required_dl'),
-              verified: isKycVerified,
-            },
-            {
-              icon: 'finger-print-outline' as const,
-              title: t('aadhaar_identity'),
-              sub: kycProfile?.nationalIdMasked || kycProfile?.aadhaarLast4
-                ? `${kycProfile.nationalIdMasked || `Masked (**** **** ${kycProfile.aadhaarLast4})`}`
-                : 'Not Linked (Required for Drivers)',
-              verified: Boolean(kycProfile?.nationalIdMasked || kycProfile?.aadhaarLast4),
-            },
-            {
-              icon: 'call-outline' as const,
-              title: t('mobile_phone'),
-              sub: userProfile.phone || kycProfile?.phone ? `${userProfile.phone || kycProfile?.phone} (Active)` : 'Add phone number',
-              verified: Boolean(userProfile.phone || kycProfile?.phone),
-            },
-          ].map((item) => (
-            <TouchableOpacity
-              key={item.title}
-              style={styles.verifRow}
-              onPress={() => router.push('/driver-verification' as any)}
-            >
+          <View style={styles.verifBadgeRow}>
+            <View style={[styles.verifBadge, { backgroundColor: isKycVerified ? '#D1FAE5' : '#FEF9C3' }]}>
               <Ionicons
-                name={item.icon}
-                size={18}
-                color={item.verified ? '#059669' : '#D97706'}
+                name={isKycVerified ? 'checkmark-circle' : 'shield-outline'}
+                size={12}
+                color={isKycVerified ? '#059669' : '#D97706'}
               />
-              <View style={{ flex: 1, marginLeft: spacing.sm }}>
-                <Text style={styles.verifTitle}>{item.title}</Text>
-                <Text style={styles.verifSub}>{item.sub}</Text>
+              <Text style={[styles.verifBadgeText, { color: isKycVerified ? '#059669' : '#D97706' }]}>
+                DL {isKycVerified ? 'Verified' : 'Required'}
+              </Text>
+            </View>
+            <View style={[styles.verifBadge, {
+              backgroundColor: (kycProfile?.nationalIdMasked || kycProfile?.aadhaarLast4) ? '#D1FAE5' : '#FEF9C3',
+            }]}>
+              <Ionicons
+                name={(kycProfile?.nationalIdMasked || kycProfile?.aadhaarLast4) ? 'checkmark-circle' : 'finger-print-outline'}
+                size={12}
+                color={(kycProfile?.nationalIdMasked || kycProfile?.aadhaarLast4) ? '#059669' : '#D97706'}
+              />
+              <Text style={[styles.verifBadgeText, {
+                color: (kycProfile?.nationalIdMasked || kycProfile?.aadhaarLast4) ? '#059669' : '#D97706',
+              }]}>
+                Aadhaar {(kycProfile?.nationalIdMasked || kycProfile?.aadhaarLast4) ? 'Linked' : 'Required'}
+              </Text>
+            </View>
+          </View>
+        </View>
+
+        {/* ── CARBON SAVINGS CARD ── */}
+        <View style={styles.carbonCard}>
+          <Ionicons name="leaf" size={22} color="#059669" />
+          <View style={{ flex: 1, marginLeft: spacing.sm }}>
+            <Text style={styles.carbonTitle}>🌱 You've saved 12 kg CO₂</Text>
+            <Text style={styles.carbonSub}>Equivalent to planting 2 trees this year</Text>
+          </View>
+          <View style={styles.carbonBadge}>
+            <Text style={styles.carbonBadgeText}>Eco Hero</Text>
+          </View>
+        </View>
+
+        {/* ── MENU SECTIONS ── */}
+        <View style={styles.sectionCard}>
+          <Text style={styles.sectionTitle}>ACCOUNT</Text>
+
+          <MenuItem
+            icon="car-sport-outline"
+            label="🚗 My Vehicle"
+            sub={kycProfile?.vehicle?.registrationNumber
+              ? `${kycProfile.vehicle.make} ${kycProfile.vehicle.model}`
+              : 'No vehicle added'}
+            onPress={() => router.push('/driver-verification' as any)}
+          />
+          <Divider />
+          <MenuItem
+            icon="wallet-outline"
+            label="💰 Wallet & Payouts"
+            sub="Balance: ₹0.00 · UPI Linked"
+            onPress={() => Alert.alert('NEXORA Wallet', 'Instant UPI Payouts & Top-ups available.')}
+          />
+          <Divider />
+          <MenuItem
+            icon="language-outline"
+            label="🌍 Language Settings"
+            sub={activeLangName}
+            onPress={() => setIsLangModalOpen(true)}
+            rightEl={
+              <View style={styles.langActivePill}>
+                <Text style={styles.langActivePillText}>{activeLangName}</Text>
               </View>
-              <Ionicons
-                name={item.verified ? 'checkmark-circle' : 'chevron-forward'}
-                size={18}
-                color={item.verified ? '#059669' : colors.textTertiary}
-              />
-            </TouchableOpacity>
-          ))}
-        </View>
-
-        {/* ── Vehicle ── */}
-        <View style={styles.card}>
-          <View style={styles.cardHeaderRow}>
-            <Text style={styles.cardTitle}>{t('vehicle_details')}</Text>
-            <TouchableOpacity onPress={() => router.push('/driver-verification' as any)}>
-              <Text style={styles.editLink}>{isKycVerified ? 'Edit' : 'Add Vehicle'}</Text>
-            </TouchableOpacity>
-          </View>
-          <View style={styles.vehicleRow}>
-            <View style={styles.vehicleIcon}>
-              <Ionicons name="car-sport" size={22} color={colors.primary} />
-            </View>
-            <View style={{ flex: 1 }}>
-              {kycProfile?.vehicle?.registrationNumber ? (
-                <>
-                  <Text style={styles.vehicleName}>
-                    {kycProfile.vehicle.make} {kycProfile.vehicle.model}
-                  </Text>
-                  <Text style={styles.vehicleDetail}>
-                    {kycProfile.vehicle.color} • {kycProfile.vehicle.registrationNumber} ({kycProfile.vehicle.fuelType?.toUpperCase()})
-                  </Text>
-                </>
-              ) : (
-                <>
-                  <Text style={styles.vehicleName}>No Vehicle Added</Text>
-                  <Text style={styles.vehicleDetail}>
-                    Register your white-plate car to publish rides & earn
-                  </Text>
-                </>
-              )}
-            </View>
-          </View>
-        </View>
-
-        {/* ── Chattiness ── */}
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>{t('chat_preference')}</Text>
+            }
+          />
+          <Divider />
+          <MenuItem
+            icon="chatbubble-ellipses-outline"
+            label="🗣 Chattiness Level"
+            sub={chattiness === 'Bla' ? 'Quiet' : chattiness === 'BlaBla' ? 'Chatty' : 'Talkative'}
+            onPress={() => {/* inline below */}}
+            hideArrow
+          />
+          {/* Chattiness picker inline */}
           <View style={styles.chattinessRow}>
             {(['Bla', 'BlaBla', 'BlaBlaBla'] as const).map((level) => (
               <TouchableOpacity
@@ -373,17 +328,72 @@ export default function ProfileScreen() {
           </View>
         </View>
 
-        {/* ── Logout ── */}
+        <View style={styles.sectionCard}>
+          <Text style={styles.sectionTitle}>PREFERENCES</Text>
+          <MenuItem
+            icon="notifications-outline"
+            label="🔔 Notifications"
+            sub="All notifications on"
+            onPress={() => Alert.alert('Notifications', 'Notification settings coming soon.')}
+          />
+          <Divider />
+          <MenuItem
+            icon="lock-closed-outline"
+            label="🔒 Privacy & Security"
+            sub="Phone masked · 2FA enabled"
+            onPress={() => Alert.alert('Privacy', 'Privacy & Security settings coming soon.')}
+          />
+        </View>
+
+        <View style={styles.sectionCard}>
+          <Text style={styles.sectionTitle}>SUPPORT</Text>
+          <MenuItem
+            icon="help-circle-outline"
+            label="❓ Help & Support"
+            sub="FAQ · Chat support · Report issue"
+            onPress={() => Alert.alert('Help', 'Support centre coming soon.')}
+          />
+        </View>
+
+        {/* ── MY REVIEWS ── */}
+        <View style={styles.sectionCard}>
+          <Text style={styles.sectionTitle}>MY REVIEWS</Text>
+          {MOCK_REVIEWS.map((review, idx) => (
+            <View key={review.id}>
+              <View style={styles.reviewItem}>
+                <View style={[styles.reviewAvatar, { backgroundColor: getAvatarColor(review.reviewer) }]}>
+                  <Text style={styles.reviewAvatarText}>{review.reviewer.charAt(0)}</Text>
+                </View>
+                <View style={{ flex: 1, marginLeft: spacing.sm }}>
+                  <View style={styles.reviewHeaderRow}>
+                    <Text style={styles.reviewerName}>{review.reviewer}</Text>
+                    <View style={styles.reviewStarsRow}>
+                      {[1, 2, 3, 4, 5].map((s) => (
+                        <Ionicons key={s} name="star" size={11} color={s <= review.rating ? '#F59E0B' : colors.border} />
+                      ))}
+                    </View>
+                  </View>
+                  <Text style={styles.reviewComment}>{review.comment}</Text>
+                  <Text style={styles.reviewDate}>{review.date}</Text>
+                </View>
+              </View>
+              {idx < MOCK_REVIEWS.length - 1 && <Divider />}
+            </View>
+          ))}
+        </View>
+
+        {/* ── SIGN OUT ── */}
         <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
           <Ionicons name="log-out-outline" size={18} color="#EF4444" />
-          <Text style={styles.logoutBtnText}>{t('log_out')}</Text>
+          <Text style={styles.logoutBtnText}>🚪 {t('log_out')}</Text>
         </TouchableOpacity>
       </ScrollView>
 
-      {/* ── Edit Profile Modal ── */}
+      {/* ── EDIT PROFILE MODAL ── */}
       <Modal visible={isEditModalOpen} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
+          <View style={styles.modalSheet}>
+            <View style={styles.modalHandle} />
             <View style={styles.modalHeaderRow}>
               <Text style={styles.modalTitle}>{t('edit_profile')}</Text>
               <TouchableOpacity onPress={() => setIsEditModalOpen(false)}>
@@ -433,7 +443,80 @@ export default function ProfileScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* ── LANGUAGE SELECTOR BOTTOM SHEET MODAL ── */}
+      <Modal visible={isLangModalOpen} animationType="slide" transparent>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalSheet, { paddingBottom: spacing.xxxl }]}>
+            <View style={styles.modalHandle} />
+            <View style={styles.modalHeaderRow}>
+              <Text style={styles.modalTitle}>🌍 {t('app_language')}</Text>
+              <TouchableOpacity onPress={() => setIsLangModalOpen(false)}>
+                <Ionicons name="close" size={24} color={colors.textPrimary} />
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.langSubtitle}>{t('select_pref_lang')}</Text>
+            <View style={styles.langGrid}>
+              {supportedLanguages.map((lang) => {
+                const isSelected = language === lang.code;
+                return (
+                  <TouchableOpacity
+                    key={lang.code}
+                    style={[styles.langChip, isSelected && styles.langChipActive]}
+                    onPress={() => handleSelectLanguage(lang.code)}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={[styles.langNativeText, isSelected && styles.langNativeTextActive]}>
+                      {lang.nativeName}
+                    </Text>
+                    <Text style={[styles.langEnglishText, isSelected && styles.langEnglishTextActive]}>
+                      {lang.name}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
+  );
+}
+
+// ── Helper components ────────────────────────────────────────────────────────
+
+function Divider() {
+  return <View style={{ height: 1, backgroundColor: colors.border, marginVertical: 0 }} />;
+}
+
+function MenuItem({
+  icon,
+  label,
+  sub,
+  onPress,
+  hideArrow,
+  rightEl,
+}: {
+  icon: React.ComponentProps<typeof Ionicons>['name'];
+  label: string;
+  sub?: string;
+  onPress: () => void;
+  hideArrow?: boolean;
+  rightEl?: React.ReactNode;
+}) {
+  return (
+    <TouchableOpacity style={styles.menuItem} onPress={onPress} activeOpacity={0.7}>
+      <View style={styles.menuItemIcon}>
+        <Ionicons name={icon} size={18} color={colors.primary} />
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.menuItemLabel}>{label}</Text>
+        {sub ? <Text style={styles.menuItemSub}>{sub}</Text> : null}
+      </View>
+      {rightEl ?? (hideArrow ? null : (
+        <Ionicons name="chevron-forward" size={16} color={colors.textTertiary} />
+      ))}
+    </TouchableOpacity>
   );
 }
 
@@ -447,247 +530,239 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.huge,
   },
 
-  /* User Card */
-  userCard: {
+  /* ── HERO CARD ── */
+  heroCard: {
     backgroundColor: colors.surface,
-    borderRadius: borderRadius.xl,
-    padding: spacing.lg,
-    flexDirection: 'row',
-    alignItems: 'center',
+    borderRadius: borderRadius.xxl,
+    padding: spacing.xl,
     marginBottom: spacing.md,
+    alignItems: 'center',
     borderWidth: 1,
     borderColor: colors.border,
-    ...shadows.sm,
+    ...shadows.md,
   },
-  avatar: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    backgroundColor: colors.primary,
+  avatarWrapper: {
+    marginBottom: spacing.md,
+  },
+  avatarRing: {
+    width: 92,
+    height: 92,
+    borderRadius: 46,
+    borderWidth: 3,
+    borderColor: colors.accent,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: spacing.md,
+    padding: 3,
+  },
+  avatar: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   avatarText: {
-    color: colors.accent,
-    fontSize: typography.fontSizes.xl,
+    color: '#FFFFFF',
+    fontSize: typography.fontSizes.xxl,
     fontWeight: typography.fontWeights.heavy,
   },
-  userInfo: {
-    flex: 1,
+  heroInfo: {
+    alignItems: 'center',
+    marginBottom: spacing.md,
   },
   nameRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    gap: spacing.xs,
   },
-  userName: {
+  heroName: {
     fontSize: typography.fontSizes.lg,
     fontWeight: typography.fontWeights.heavy,
     color: colors.textPrimary,
   },
-  userNamePlaceholder: {
+  heroNamePlaceholder: {
     color: colors.textTertiary,
     fontStyle: 'italic',
   },
-  userPhonePlaceholder: {
-    color: colors.primary,
-    fontWeight: typography.fontWeights.semibold,
-  },
   editPencilBtn: {
     padding: 4,
-    borderRadius: 8,
+    borderRadius: borderRadius.sm,
     backgroundColor: colors.surfaceMuted,
   },
-  userPhone: {
-    fontSize: typography.fontSizes.xs,
+  heroPhone: {
+    fontSize: typography.fontSizes.sm,
     color: colors.textSecondary,
-    marginTop: 1,
+    marginTop: 2,
   },
-  ratingRow: {
+  heroPhonePlaceholder: {
+    color: colors.primary,
+    fontWeight: typography.fontWeights.semibold,
+  },
+
+  /* Stat chips */
+  statChipsRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    marginTop: 4,
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: borderRadius.pill,
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    gap: 0,
   },
-  ratingText: {
+  statChip: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 2,
+  },
+  statChipText: {
     fontSize: typography.fontSizes.xs,
     fontWeight: typography.fontWeights.semibold,
     color: colors.textPrimary,
   },
-  verifiedChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-    borderRadius: borderRadius.pill,
-    marginLeft: 6,
-  },
-  verifiedChipGreen: {
-    backgroundColor: '#ECFDF5',
-  },
-  verifiedChipOrange: {
-    backgroundColor: '#FEF3C7',
-  },
-  verifiedChipText: {
-    fontSize: 10,
-    fontWeight: typography.fontWeights.bold,
-  },
-
-  /* Cards */
-  card: {
-    backgroundColor: colors.surface,
-    borderRadius: borderRadius.xl,
-    padding: spacing.md,
-    marginBottom: spacing.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    ...shadows.sm,
-  },
-  cardHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: spacing.xs,
-  },
-  cardTitle: {
-    fontSize: typography.fontSizes.sm,
-    fontWeight: typography.fontWeights.heavy,
-    color: colors.textPrimary,
-    letterSpacing: 0.2,
-  },
-  editLink: {
-    fontSize: typography.fontSizes.xs,
-    fontWeight: typography.fontWeights.bold,
-    color: colors.primary,
-  },
-
-  /* Language Selector */
-  langSubtitle: {
-    fontSize: typography.fontSizes.xs,
-    color: colors.textSecondary,
-    marginBottom: spacing.sm,
-  },
-  langActiveBadge: {
-    fontSize: 11,
-    fontWeight: typography.fontWeights.bold,
-    color: colors.primary,
-    backgroundColor: colors.surfaceMuted,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: borderRadius.pill,
-  },
-  langGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.xs,
-  },
-  langChip: {
-    width: '23%',
-    paddingVertical: spacing.xs,
-    paddingHorizontal: 4,
-    borderRadius: borderRadius.md,
-    backgroundColor: colors.surfaceMuted,
-    borderWidth: 1,
-    borderColor: colors.border,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  langChipActive: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
-  },
-  langNativeText: {
-    fontSize: typography.fontSizes.xs,
-    fontWeight: typography.fontWeights.bold,
-    color: colors.textPrimary,
-  },
-  langNativeTextActive: {
-    color: '#FFFFFF',
-  },
-  langEnglishText: {
-    fontSize: 9,
-    color: colors.textSecondary,
-    marginTop: 1,
-  },
-  langEnglishTextActive: {
-    color: 'rgba(255,255,255,0.85)',
-  },
-
-  /* Wallet */
-  walletCard: {
-    backgroundColor: colors.surfaceMuted,
-    borderRadius: borderRadius.xl,
-    padding: spacing.md,
-    marginBottom: spacing.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    ...shadows.sm,
-  },
-  walletRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: spacing.md,
-  },
-  walletLabel: {
-    fontSize: 10,
-    fontWeight: typography.fontWeights.heavy,
-    color: colors.textSecondary,
-    letterSpacing: 1,
-  },
-  walletAmount: {
-    fontSize: typography.fontSizes.xxl,
-    fontWeight: typography.fontWeights.heavy,
-    color: colors.textPrimary,
-  },
-  topUpBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.accent,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-    borderRadius: borderRadius.pill,
-    gap: 4,
-  },
-  topUpBtnText: {
-    color: colors.accentText,
-    fontSize: typography.fontSizes.xs,
-    fontWeight: typography.fontWeights.bold,
-  },
-  statsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-around',
-    paddingTop: spacing.sm,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-  },
-  statItem: {
-    alignItems: 'center',
-    gap: 2,
-  },
-  statValue: {
-    fontSize: typography.fontSizes.xs,
-    fontWeight: typography.fontWeights.bold,
-    color: colors.textPrimary,
-  },
-  statLabel: {
-    fontSize: 10,
-    color: colors.textSecondary,
-  },
-  statDivider: {
+  statChipDivider: {
     width: 1,
-    height: 24,
+    height: 16,
     backgroundColor: colors.border,
   },
 
-  /* Chattiness */
+  /* ── VERIFICATION STATUS CARD ── */
+  verifStatusCard: {
+    borderRadius: borderRadius.xl,
+    borderWidth: 1,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+  },
+  verifStatusHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.sm,
+  },
+  verifStatusLabel: {
+    fontSize: typography.fontSizes.sm,
+    fontWeight: typography.fontWeights.heavy,
+  },
+  manageLink: {
+    fontSize: typography.fontSizes.xs,
+    fontWeight: typography.fontWeights.bold,
+  },
+  verifBadgeRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  verifBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 4,
+    borderRadius: borderRadius.pill,
+  },
+  verifBadgeText: {
+    fontSize: 11,
+    fontWeight: typography.fontWeights.semibold,
+  },
+
+  /* ── CARBON CARD ── */
+  carbonCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#ECFDF5',
+    borderRadius: borderRadius.xl,
+    borderWidth: 1,
+    borderColor: '#6EE7B7',
+    padding: spacing.md,
+    marginBottom: spacing.md,
+  },
+  carbonTitle: {
+    fontSize: typography.fontSizes.sm,
+    fontWeight: typography.fontWeights.heavy,
+    color: '#065F46',
+  },
+  carbonSub: {
+    fontSize: typography.fontSizes.xs,
+    color: '#059669',
+    marginTop: 2,
+  },
+  carbonBadge: {
+    backgroundColor: '#D1FAE5',
+    borderRadius: borderRadius.pill,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 3,
+  },
+  carbonBadgeText: {
+    fontSize: 10,
+    fontWeight: typography.fontWeights.heavy,
+    color: '#059669',
+  },
+
+  /* ── SECTION CARDS ── */
+  sectionCard: {
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.xl,
+    marginBottom: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    overflow: 'hidden',
+    ...shadows.sm,
+  },
+  sectionTitle: {
+    fontSize: 10,
+    fontWeight: typography.fontWeights.heavy,
+    color: colors.textTertiary,
+    letterSpacing: 0.8,
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.xs,
+  },
+
+  /* Menu item */
+  menuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm + 2,
+  },
+  menuItemIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: borderRadius.sm,
+    backgroundColor: colors.surfaceMuted,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: spacing.sm,
+  },
+  menuItemLabel: {
+    fontSize: typography.fontSizes.sm,
+    fontWeight: typography.fontWeights.semibold,
+    color: colors.textPrimary,
+  },
+  menuItemSub: {
+    fontSize: typography.fontSizes.xs,
+    color: colors.textSecondary,
+    marginTop: 1,
+  },
+
+  /* Language active pill */
+  langActivePill: {
+    backgroundColor: colors.accentSoft,
+    borderRadius: borderRadius.pill,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 3,
+  },
+  langActivePillText: {
+    fontSize: 10,
+    fontWeight: typography.fontWeights.bold,
+    color: colors.accentText,
+  },
+
+  /* Chattiness (inline below menu item) */
   chattinessRow: {
     flexDirection: 'row',
     gap: spacing.xs,
-    marginTop: spacing.xs,
+    paddingHorizontal: spacing.md,
+    paddingBottom: spacing.md,
+    paddingTop: spacing.xs,
   },
   chattinessBtn: {
     flex: 1,
@@ -701,7 +776,7 @@ const styles = StyleSheet.create({
   },
   chattinessBtnActive: {
     borderColor: colors.primary,
-    backgroundColor: '#EEF2FF',
+    backgroundColor: colors.primary,
   },
   chattinessBtnTitle: {
     fontSize: typography.fontSizes.xs,
@@ -709,7 +784,7 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
   },
   chattinessBtnTitleActive: {
-    color: colors.primary,
+    color: colors.accent,
   },
   chattinessBtnDesc: {
     fontSize: 10,
@@ -717,63 +792,62 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
 
-  /* Verification */
-  verifRow: {
+  /* ── REVIEWS ── */
+  reviewItem: {
     flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: spacing.xs + 2,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.surfaceMuted,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm + 2,
   },
-  verifTitle: {
-    fontSize: typography.fontSizes.xs,
-    fontWeight: typography.fontWeights.semibold,
-    color: colors.textPrimary,
-  },
-  verifSub: {
-    fontSize: 11,
-    color: colors.textSecondary,
-    marginTop: 1,
-  },
-
-  /* Vehicle */
-  vehicleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: spacing.xs,
-  },
-  vehicleIcon: {
-    width: 42,
-    height: 42,
-    borderRadius: borderRadius.md,
-    backgroundColor: colors.surfaceMuted,
+  reviewAvatar: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: spacing.md,
   },
-  vehicleName: {
+  reviewAvatarText: {
+    color: '#fff',
+    fontWeight: typography.fontWeights.heavy,
     fontSize: typography.fontSizes.sm,
+  },
+  reviewHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  reviewerName: {
+    fontSize: typography.fontSizes.xs,
     fontWeight: typography.fontWeights.bold,
     color: colors.textPrimary,
   },
-  vehicleDetail: {
+  reviewStarsRow: {
+    flexDirection: 'row',
+    gap: 1,
+  },
+  reviewComment: {
     fontSize: typography.fontSizes.xs,
     color: colors.textSecondary,
     marginTop: 2,
+    lineHeight: 16,
+  },
+  reviewDate: {
+    fontSize: 10,
+    color: colors.textTertiary,
+    marginTop: 2,
   },
 
-  /* Logout */
+  /* ── LOGOUT ── */
   logoutBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: spacing.sm + 2,
-    borderRadius: borderRadius.lg,
+    paddingVertical: spacing.sm + 4,
+    borderRadius: borderRadius.xl,
     borderWidth: 1,
     borderColor: '#FEE2E2',
     backgroundColor: '#FEF2F2',
     gap: spacing.xs,
-    marginTop: spacing.sm,
+    marginTop: spacing.xs,
   },
   logoutBtnText: {
     fontSize: typography.fontSizes.sm,
@@ -781,21 +855,27 @@ const styles = StyleSheet.create({
     color: '#EF4444',
   },
 
-  /* Modal */
+  /* ── MODAL / BOTTOM SHEET ── */
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: spacing.lg,
+    justifyContent: 'flex-end',
   },
-  modalContent: {
+  modalSheet: {
     backgroundColor: colors.surface,
-    borderRadius: borderRadius.xxl,
+    borderTopLeftRadius: borderRadius.xxl,
+    borderTopRightRadius: borderRadius.xxl,
     padding: spacing.xl,
-    width: '100%',
-    maxWidth: 400,
+    paddingTop: spacing.sm,
     ...shadows.lg,
+  },
+  modalHandle: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: colors.border,
+    alignSelf: 'center',
+    marginBottom: spacing.md,
   },
   modalHeaderRow: {
     flexDirection: 'row',
@@ -854,5 +934,48 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSizes.sm,
     fontWeight: typography.fontWeights.bold,
     color: '#FFFFFF',
+  },
+
+  /* Language modal */
+  langSubtitle: {
+    fontSize: typography.fontSizes.xs,
+    color: colors.textSecondary,
+    marginBottom: spacing.md,
+  },
+  langGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.xs,
+  },
+  langChip: {
+    width: '23%',
+    paddingVertical: spacing.xs,
+    paddingHorizontal: 4,
+    borderRadius: borderRadius.md,
+    backgroundColor: colors.surfaceMuted,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  langChipActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  langNativeText: {
+    fontSize: typography.fontSizes.xs,
+    fontWeight: typography.fontWeights.bold,
+    color: colors.textPrimary,
+  },
+  langNativeTextActive: {
+    color: '#FFFFFF',
+  },
+  langEnglishText: {
+    fontSize: 9,
+    color: colors.textSecondary,
+    marginTop: 1,
+  },
+  langEnglishTextActive: {
+    color: 'rgba(255,255,255,0.85)',
   },
 });

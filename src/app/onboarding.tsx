@@ -12,7 +12,7 @@ import {
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
-import { MaterialCommunityIcons, Ionicons, FontAwesome6 } from '@expo/vector-icons';
+import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
 import { colors, spacing, borderRadius, typography, shadows } from '@/theme/tokens';
 import { OnboardingSlide } from '@/models/types';
 import { Button } from '@/components/common/Button';
@@ -23,30 +23,30 @@ const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const SLIDES: OnboardingSlide[] = [
   {
     id: '1',
-    badge: 'CONVENIENT URBAN COMMUTE',
-    title: 'Fast & Effortless City Rides',
-    subtitle: 'From daily metro hops to cross-town office commutes.',
+    badge: 'INTERCITY CARPOOLING',
+    title: 'Share the Journey, Split the Cost',
+    subtitle: 'Affordable intercity travel with fellow commuters.',
     description:
-      'Choose from two-wheelers, auto-rickshaws, and cabs designed specifically for Indian urban traffic. Instant pickup access built right for your daily rhythm.',
-    icon: 'motorbike',
+      'Book seats on shared cars between cities. Split fuel costs, reduce your carbon footprint, and travel more affordably than ever before.',
+    icon: 'car-multiple',
   },
   {
     id: '2',
     badge: 'HONEST PRICING GUARANTEE',
-    title: 'Transparent Upfront Estimates',
-    subtitle: 'Clear distance-based fare ranges shown before booking.',
+    title: 'Transparent Pricing, Always',
+    subtitle: 'Fixed fare shown upfront — no surge, ever.',
     description:
-      'No hidden surge surprises or post-trip sticker shock. Review fixed estimate ranges beforehand so you are always in complete control of your travel budget.',
+      'See the full price breakdown before you book. What you see is what you pay. No hidden charges, no last-minute surprises.',
     icon: 'cash-check',
   },
   {
     id: '3',
-    badge: 'SAFETY & REAL-TIME VISIBILITY',
-    title: 'Live Route Tracking (Coming)',
-    subtitle: 'Continuous route monitoring and safety protocols.',
+    badge: 'SAFETY & TRUST',
+    title: 'Travel Safe, Travel Smart',
+    subtitle: 'ID-verified drivers and 24x7 emergency support.',
     description:
-      'Track your journey in real time with shareable trip status and 24/7 dedicated assistance. Phase 1 previews the visual architecture ahead of live GPS dispatching.',
-    icon: 'map-marker-radius',
+      'Every driver is identity-verified. Share your live trip with family, trigger SOS anytime, and ride with a trusted community.',
+    icon: 'shield-check',
   },
 ];
 
@@ -77,59 +77,113 @@ export default function OnboardingScreen() {
     router.push('/welcome');
   };
 
-  const renderIllustration = (icon: string, id: string) => {
+  const renderIllustration = (_icon: string, id: string) => {
     return (
       <View style={styles.illustrationCard}>
-        {/* Decorative background grid and circles */}
-        <View style={styles.illusCircleBack} />
-        <View style={styles.illusCircleAccent} />
-
         {id === '1' && (
-          <View style={styles.illusContent}>
-            <View style={styles.iconCenterCircle}>
-              <MaterialCommunityIcons name="motorbike" size={60} color={colors.primary} />
+          <>
+            {/* Layered gradient background: lime tint top, navy bottom */}
+            <View style={styles.slide1BgTop} />
+            <View style={styles.slide1BgBottom} />
+
+            <View style={styles.illusContent}>
+              {/* Route graphic */}
+              <View style={styles.routeRow}>
+                {/* Origin pin */}
+                <View style={styles.pinContainer}>
+                  <View style={styles.pinCircle}>
+                    <Ionicons name="location" size={16} color={colors.accentText} />
+                  </View>
+                  <Text style={styles.pinLabel}>From</Text>
+                </View>
+
+                {/* Dotted line + car */}
+                <View style={styles.routeLineContainer}>
+                  <View style={styles.dottedLine} />
+                  <View style={styles.carBubble}>
+                    <MaterialCommunityIcons name="car" size={22} color={colors.accentText} />
+                  </View>
+                </View>
+
+                {/* Destination pin */}
+                <View style={styles.pinContainer}>
+                  <View style={[styles.pinCircle, styles.pinCircleNav]}>
+                    <Ionicons name="flag" size={16} color={colors.textInverse} />
+                  </View>
+                  <Text style={styles.pinLabel}>To</Text>
+                </View>
+              </View>
+
+              {/* Floating badges */}
+              <View style={styles.floatingBadgeLeft}>
+                <MaterialCommunityIcons name="leaf" size={12} color={colors.accentText} />
+                <Text style={styles.floatingBadgeText}>0 Emissions via shared rides</Text>
+              </View>
+              <View style={styles.floatingBadgeRight}>
+                <Ionicons name="wallet-outline" size={12} color={colors.primary} />
+                <Text style={styles.floatingBadgeDarkText}>Save up to ₹800 per trip</Text>
+              </View>
             </View>
-            <View style={styles.floatingBadgeLeft}>
-              <MaterialCommunityIcons name="lightning-bolt" size={14} color={colors.accentText} />
-              <Text style={styles.floatingBadgeText}>Quick Commute</Text>
-            </View>
-            <View style={styles.floatingBadgeRight}>
-              <MaterialCommunityIcons name="clock-fast" size={14} color={colors.primary} />
-              <Text style={styles.floatingBadgeDarkText}>Sub-5 Min ETA</Text>
-            </View>
-          </View>
+          </>
         )}
 
         {id === '2' && (
-          <View style={styles.illusContent}>
-            <View style={styles.iconCenterCircle}>
-              <FontAwesome6 name="indian-rupee-sign" size={50} color={colors.primary} />
+          <>
+            <View style={styles.slide2Bg} />
+            <View style={styles.illusContent}>
+              {/* Price breakdown card */}
+              <View style={styles.priceCard}>
+                <Text style={styles.priceCardTitle}>Price Breakdown</Text>
+                <View style={styles.priceRow}>
+                  <Text style={styles.priceLabel}>Fare</Text>
+                  <Text style={styles.priceValue}>₹700</Text>
+                </View>
+                <View style={styles.priceRow}>
+                  <Text style={styles.priceLabel}>Convenience</Text>
+                  <Text style={styles.priceValue}>₹50</Text>
+                </View>
+                <View style={[styles.priceRow, styles.priceTotalRow]}>
+                  <Text style={styles.priceTotalLabel}>Total</Text>
+                  <Text style={styles.priceTotalValue}>₹750</Text>
+                </View>
+              </View>
+
+              {/* Pills */}
+              <View style={styles.floatingBadgeLeft}>
+                <Ionicons name="checkmark-circle" size={13} color="#059669" />
+                <Text style={[styles.floatingBadgeText, { color: '#065F46' }]}>No surge pricing ever</Text>
+              </View>
+              <View style={[styles.floatingBadgeRight, styles.navyPill]}>
+                <Ionicons name="receipt-outline" size={12} color={colors.accent} />
+                <Text style={[styles.floatingBadgeDarkText, { color: colors.accent }]}>Upfront fare always</Text>
+              </View>
             </View>
-            <View style={styles.floatingBadgeLeft}>
-              <Ionicons name="shield-checkmark" size={14} color={colors.accentText} />
-              <Text style={styles.floatingBadgeText}>Zero Surprises</Text>
-            </View>
-            <View style={styles.floatingBadgeRight}>
-              <Ionicons name="receipt-outline" size={14} color={colors.primary} />
-              <Text style={styles.floatingBadgeDarkText}>Upfront Fares</Text>
-            </View>
-          </View>
+          </>
         )}
 
         {id === '3' && (
-          <View style={styles.illusContent}>
-            <View style={styles.iconCenterCircle}>
-              <MaterialCommunityIcons name="map-marker-path" size={56} color={colors.primary} />
+          <>
+            <View style={styles.slide3Bg} />
+            <View style={styles.illusContent}>
+              {/* Large shield icon */}
+              <View style={styles.shieldContainer}>
+                <MaterialCommunityIcons name="shield-check" size={52} color={colors.accentText} />
+              </View>
+
+              {/* Trust items */}
+              <View style={styles.trustList}>
+                <Text style={styles.trustItem}>✅ ID Verified Drivers</Text>
+                <Text style={styles.trustItem}>📱 Real-time GPS sharing</Text>
+                <Text style={styles.trustItem}>🆘 24x7 SOS access</Text>
+              </View>
+
+              {/* Floating badge */}
+              <View style={styles.floatingBadgeLeft}>
+                <MaterialCommunityIcons name="account-check" size={12} color={colors.accentText} />
+                <Text style={styles.floatingBadgeText}>100% verified community</Text>
+              </View>
             </View>
-            <View style={styles.floatingBadgeLeft}>
-              <Ionicons name="navigate-circle" size={14} color={colors.accentText} />
-              <Text style={styles.floatingBadgeText}>Real-Time Route</Text>
-            </View>
-            <View style={styles.floatingBadgeRight}>
-              <Ionicons name="shield" size={14} color={colors.primary} />
-              <Text style={styles.floatingBadgeDarkText}>Safety Shield</Text>
-            </View>
-          </View>
+          </>
         )}
       </View>
     );
@@ -191,6 +245,9 @@ export default function OnboardingScreen() {
 
       {/* Bottom Controls */}
       <View style={styles.bottomControls}>
+        {/* Slide counter */}
+        <Text style={styles.slideCounter}>{activeIndex + 1} / {SLIDES.length}</Text>
+
         {/* Indicators */}
         <View style={styles.indicatorContainer}>
           {SLIDES.map((_, index) => {
@@ -262,8 +319,7 @@ const styles = StyleSheet.create({
   },
   illustrationCard: {
     width: '100%',
-    height: 250,
-    backgroundColor: colors.surface,
+    height: 260,
     borderRadius: borderRadius.xxl,
     borderWidth: 1,
     borderColor: colors.border,
@@ -272,24 +328,42 @@ const styles = StyleSheet.create({
     position: 'relative',
     overflow: 'hidden',
     marginBottom: spacing.xl,
-    ...shadows.sm,
+    ...shadows.md,
   },
-  illusCircleBack: {
+  // Slide 1 backgrounds
+  slide1BgTop: {
     position: 'absolute',
-    width: 220,
-    height: 220,
-    borderRadius: 110,
-    backgroundColor: colors.surfaceMuted,
-    top: -20,
+    top: 0,
+    left: 0,
+    right: 0,
+    height: '55%',
+    backgroundColor: colors.accentSoft,
   },
-  illusCircleAccent: {
+  slide1BgBottom: {
     position: 'absolute',
-    bottom: -30,
-    right: -30,
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    backgroundColor: 'rgba(199, 243, 107, 0.35)',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: '45%',
+    backgroundColor: colors.primary,
+  },
+  // Slide 2 background
+  slide2Bg: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: colors.successSoft,
+  },
+  // Slide 3 background
+  slide3Bg: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: colors.primary,
   },
   illusContent: {
     alignItems: 'center',
@@ -298,54 +372,179 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
   },
-  iconCenterCircle: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
+  // Route graphic (slide 1)
+  routeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: spacing.xl,
+    width: '100%',
+  },
+  pinContainer: {
+    alignItems: 'center',
+    gap: 4,
+  },
+  pinCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     backgroundColor: colors.accent,
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 3,
+    ...shadows.sm,
+  },
+  pinCircleNav: {
+    backgroundColor: colors.primaryLight,
+  },
+  pinLabel: {
+    fontSize: 10,
+    fontWeight: typography.fontWeights.bold,
+    color: colors.primary,
+    marginTop: 2,
+  },
+  routeLineContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+    height: 36,
+    marginHorizontal: spacing.sm,
+  },
+  dottedLine: {
+    width: '100%',
+    height: 2,
+    borderStyle: 'dashed',
+    borderWidth: 1.5,
     borderColor: colors.primary,
+    borderRadius: 1,
+  },
+  carBubble: {
+    position: 'absolute',
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.accent,
+    justifyContent: 'center',
+    alignItems: 'center',
     ...shadows.md,
   },
+  // Price card (slide 2)
+  priceCard: {
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.lg,
+    padding: spacing.md,
+    width: '70%',
+    borderWidth: 1,
+    borderColor: colors.border,
+    ...shadows.md,
+  },
+  priceCardTitle: {
+    fontSize: typography.fontSizes.sm,
+    fontWeight: typography.fontWeights.bold,
+    color: colors.textPrimary,
+    marginBottom: spacing.sm,
+    textAlign: 'center',
+  },
+  priceRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 3,
+  },
+  priceLabel: {
+    fontSize: typography.fontSizes.xs,
+    color: colors.textSecondary,
+  },
+  priceValue: {
+    fontSize: typography.fontSizes.xs,
+    fontWeight: typography.fontWeights.semibold,
+    color: colors.textPrimary,
+  },
+  priceTotalRow: {
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    marginTop: 4,
+    paddingTop: 6,
+  },
+  priceTotalLabel: {
+    fontSize: typography.fontSizes.sm,
+    fontWeight: typography.fontWeights.heavy,
+    color: colors.textPrimary,
+  },
+  priceTotalValue: {
+    fontSize: typography.fontSizes.md,
+    fontWeight: typography.fontWeights.heavy,
+    color: colors.success,
+  },
+  // Shield + trust (slide 3)
+  shieldContainer: {
+    width: 88,
+    height: 88,
+    borderRadius: 44,
+    backgroundColor: colors.accent,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: spacing.md,
+    ...shadows.glowLime,
+  },
+  trustList: {
+    gap: 6,
+    alignItems: 'flex-start',
+  },
+  trustItem: {
+    fontSize: typography.fontSizes.sm,
+    fontWeight: typography.fontWeights.semibold,
+    color: colors.textInverse,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    paddingHorizontal: spacing.md,
+    paddingVertical: 5,
+    borderRadius: borderRadius.md,
+  },
+  // Floating badges (shared)
   floatingBadgeLeft: {
     position: 'absolute',
-    bottom: 24,
-    left: 20,
+    bottom: 18,
+    left: 16,
     backgroundColor: colors.accent,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: spacing.md,
-    paddingVertical: 6,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 5,
     borderRadius: borderRadius.pill,
     gap: 4,
     ...shadows.sm,
+    maxWidth: '55%',
   },
   floatingBadgeText: {
     color: colors.accentText,
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: typography.fontWeights.bold,
+    flexShrink: 1,
   },
   floatingBadgeRight: {
     position: 'absolute',
-    top: 24,
-    right: 20,
+    top: 18,
+    right: 16,
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: spacing.md,
-    paddingVertical: 6,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 5,
     borderRadius: borderRadius.pill,
     gap: 4,
     ...shadows.sm,
+    maxWidth: '55%',
+  },
+  navyPill: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primaryLight,
   },
   floatingBadgeDarkText: {
     color: colors.textPrimary,
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: typography.fontWeights.bold,
+    flexShrink: 1,
   },
   slideTextContainer: {
     width: '100%',
@@ -386,6 +585,14 @@ const styles = StyleSheet.create({
   bottomControls: {
     paddingHorizontal: spacing.xl,
     paddingBottom: spacing.lg,
+    alignItems: 'center',
+  },
+  slideCounter: {
+    fontSize: typography.fontSizes.xs,
+    color: colors.textTertiary,
+    fontWeight: typography.fontWeights.semibold,
+    marginBottom: spacing.xs,
+    letterSpacing: 0.5,
   },
   indicatorContainer: {
     flexDirection: 'row',
@@ -399,8 +606,8 @@ const styles = StyleSheet.create({
     marginHorizontal: 4,
   },
   indicatorActive: {
-    width: 28,
-    backgroundColor: colors.primary,
+    width: 32,
+    backgroundColor: colors.accent,
   },
   indicatorInactive: {
     width: 8,

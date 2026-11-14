@@ -1,14 +1,18 @@
 /**
- * NEXORA RIDE — Home Screen (Rapido Modern Mobile Interface)
+ * NEXORA RIDE — Home Screen
  *
- * Designed to match Rapido's clean, modern layout (Picture 2):
- * - Top Rapido header with "For me ▾" and 24x7 Safety badge
- * - "Uh oh, we can't find you!" contextual alert banner
- * - Dual Route Card: [🟢 Pickup location] and [🟠 Drop location] with connecting line
- * - 📍 "Map" pill button to toggle interactive Indian map preview
- * - Previously searched recent locations list with 🕒 clock icon and 🤍 favorite heart
- * - Instant partial-word autocomplete suggestions as user types ("raja", "pres", "bom", "silk")
- * - Date, passenger count & Search Rides action
+ * 100% Pixel-Perfect Match to Rapido Search Interface (Pic 2):
+ * - Top Navigation: [←] Back Arrow + [For me ▾] pill dropdown
+ * - Alert: "Uh oh, we can't find you! Enter your pickup location for a smooth ride."
+ * - Dual Route Card:
+ *     🟢 Concentric green circle + [Pickup location] + [+] button
+ *     ┆  Dotted connector line
+ *     🟠 Orange down-arrow circle + [Drop location]
+ * - 📍 [Map] pill button (toggles interactive Indian map preview)
+ * - Full-screen Recent Searches List with dashed dividers:
+ *     🕒 History icon | Bold Title | Address Subtitle | 🤍 Favorite Heart
+ * - Instant partial-word autocomplete (150ms debounce) for Indian transit points
+ * - Floating "View Rides" button when both pickup & drop are selected
  */
 
 import React, { useEffect, useState, useRef, useCallback } from 'react';
@@ -19,25 +23,21 @@ import {
   ScrollView,
   TouchableOpacity,
   TextInput,
-  Alert,
   ActivityIndicator,
   Keyboard,
+  Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
-import { Ionicons } from '@expo/vector-icons';
-import { colors, spacing, borderRadius, typography, shadows } from '@/theme/tokens';
-import { BrandLogo } from '@/components/common/BrandLogo';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { colors, spacing, borderRadius, shadows } from '@/theme/tokens';
 import { SmartMap } from '@/components/map/SmartMap';
-import { SafetyModal } from '@/components/safety/SafetyModal';
 import { triggerHaptic } from '@/utils/haptics';
-import { CarpoolService } from '@/services/carpoolService';
 import { RealGeocodingProvider } from '@/services/geocoding';
 import { getRecentSearches, addRecentSearch } from '@/services/recentSearches';
 import { useTrip } from '@/context/TripContext';
 import type { PlaceSuggestion, RecentSearch, ResolvedLocation } from '@/models/types';
-import type { CarpoolRide } from '@/models/carpool';
 
 const geocoder = new RealGeocodingProvider();
 const DEBOUNCE_MS = 150; // Ultra-fast autocomplete
@@ -65,12 +65,9 @@ export default function HomeScreen() {
   // Show/hide Map preview
   const [showMap, setShowMap] = useState(false);
 
-  // Filters & Schedule
-  const [passengers, setPassengers] = useState(1);
-  const [dateSelection, setDateSelection] = useState<'today' | 'tomorrow'>('today');
-  const [selectedFilter, setSelectedFilter] = useState<'all' | 'ladies' | 'instant' | 'max2'>('all');
-  const [isSafetyVisible, setIsSafetyVisible] = useState(false);
-  const [activeRides, setActiveRides] = useState<CarpoolRide[]>([]);
+  // Dropdown "For me" state
+  const [forMeMenuVisible, setForMeMenuVisible] = useState(false);
+  const [ridePassengerLabel, setRidePassengerLabel] = useState('For me');
 
   // Input refs
   const pickupInputRef = useRef<any>(null);
@@ -93,21 +90,21 @@ export default function HomeScreen() {
     getRecentSearches().then(setRecentList);
   }, []);
 
-  // Fetch real published rides
-  useEffect(() => {
-    let isMounted = true;
-    (async () => {
-      try {
-        const rides = await CarpoolService.getAllRides();
-        if (isMounted) setActiveRides(rides);
-      } catch {
-        // Fallback
-      }
-    })();
-    return () => {
-      isMounted = false;
-    };
-  }, []);
+  // Safe back handler
+  const handleBack = () => {
+    triggerHaptic.selection();
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      // Clear inputs if at root
+      setPickupText('');
+      setDropText('');
+      setPickup(null);
+      setDestination(null);
+      setQuery('');
+      setSearchResults([]);
+    }
+  };
 
   // Debounced search when query changes
   const handleQuerySearch = useCallback((text: string) => {
@@ -205,33 +202,36 @@ export default function HomeScreen() {
           dropInputRef.current?.focus?.();
         }, 150);
       } else {
-        setShowMap(true);
+        // Both filled -> navigate or show map
+        navigateToResults(resolved.name, dropText);
       }
     } else {
       setDestination(resolved);
       setDropText(resolved.name);
       setQuery('');
       setSearchResults([]);
-      setShowMap(true);
+
+      if (pickupText.trim()) {
+        // Both filled -> navigate directly to rides
+        navigateToResults(pickupText, resolved.name);
+      } else {
+        // Prompt user to enter pickup
+        setActiveField('pickup');
+        setTimeout(() => {
+          pickupInputRef.current?.focus?.();
+        }, 150);
+      }
     }
   };
 
-  const handleSearchCarpools = () => {
-    if (!pickupText.trim() || !dropText.trim()) {
-      Alert.alert(
-        'Enter Route',
-        'Please enter both departure and destination locations to search for rides.'
-      );
-      return;
-    }
+  const navigateToResults = (origin: string, dest: string) => {
     triggerHaptic.impactMedium();
     router.push({
       pathname: '/carpool-results' as any,
       params: {
-        origin: pickupText.trim(),
-        destination: dropText.trim(),
-        seats: passengers.toString(),
-        filter: selectedFilter !== 'all' ? selectedFilter : undefined,
+        origin: origin.trim(),
+        destination: dest.trim(),
+        seats: '1',
       },
     });
   };
@@ -242,37 +242,66 @@ export default function HomeScreen() {
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
       <StatusBar style="dark" />
 
-      {/* ─── Top Rapido-Style Header ─── */}
+      {/* ─── Top Rapido Header: [←] and [For me ▾] ─── */}
       <View style={styles.topHeader}>
-        <BrandLogo size="sm" variant="dark" showTagline={false} />
+        <TouchableOpacity
+          style={styles.backBtn}
+          onPress={handleBack}
+          hitSlop={12}
+          accessibilityLabel="Go back"
+        >
+          <Ionicons name="arrow-back" size={24} color="#0F172A" />
+        </TouchableOpacity>
 
-        <View style={styles.topHeaderRight}>
-          <TouchableOpacity style={styles.forMeDropdown} activeOpacity={0.8}>
-            <Text style={styles.forMeText}>For me</Text>
-            <Ionicons name="chevron-down" size={14} color="#0F172A" />
-          </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.forMeDropdown}
+          onPress={() => {
+            triggerHaptic.selection();
+            setForMeMenuVisible(!forMeMenuVisible);
+          }}
+          activeOpacity={0.8}
+        >
+          <Text style={styles.forMeText}>{ridePassengerLabel}</Text>
+          <Ionicons name="chevron-down" size={14} color="#0F172A" />
+        </TouchableOpacity>
+      </View>
 
+      {/* For Me Dropdown Modal / Popover */}
+      {forMeMenuVisible && (
+        <View style={styles.dropdownMenu}>
           <TouchableOpacity
-            style={styles.safetyHeaderBtn}
-            onPress={() => setIsSafetyVisible(true)}
-            accessibilityLabel="Open Safety Hub"
+            style={styles.dropdownMenuItem}
+            onPress={() => {
+              setRidePassengerLabel('For me');
+              setForMeMenuVisible(false);
+            }}
           >
-            <Ionicons name="shield-checkmark" size={14} color="#059669" />
-            <Text style={styles.safetyHeaderBtnText}>24x7 Safety</Text>
+            <Ionicons name="person" size={16} color="#0F172A" />
+            <Text style={styles.dropdownMenuText}>For me</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.dropdownMenuItem}
+            onPress={() => {
+              setRidePassengerLabel('For someone else');
+              setForMeMenuVisible(false);
+            }}
+          >
+            <Ionicons name="people" size={16} color="#0F172A" />
+            <Text style={styles.dropdownMenuText}>For someone else</Text>
           </TouchableOpacity>
         </View>
-      </View>
+      )}
 
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="always"
       >
-        {/* ─── Contextual Alert Banner (Rapido Style) ─── */}
+        {/* ─── Contextual Alert Banner (Rapido Exact) ─── */}
         {!pickupText.trim() && (
           <View style={styles.alertBanner}>
             <View style={styles.alertIconCircle}>
-              <Ionicons name="information-circle" size={18} color="#475569" />
+              <Ionicons name="information" size={16} color="#FFFFFF" />
             </View>
             <Text style={styles.alertBannerText}>
               Uh oh, we can't find you! Enter your pickup location for a smooth ride.
@@ -289,19 +318,19 @@ export default function HomeScreen() {
             </View>
             <View style={styles.dottedConnectorLine} />
             <View style={styles.dropOrangeCircle}>
-              <Ionicons name="arrow-down" size={9} color="#FFFFFF" />
+              <Ionicons name="arrow-down" size={10} color="#FFFFFF" />
             </View>
           </View>
 
           {/* Right Side: Inputs */}
           <View style={styles.inputsCol}>
-            {/* Pickup Input */}
-            <View style={[styles.inputRow, activeField === 'pickup' && styles.inputRowFocused]}>
+            {/* Pickup Input Box */}
+            <View style={[styles.inputBox, activeField === 'pickup' && styles.inputBoxFocused]}>
               <TextInput
                 ref={pickupInputRef}
                 style={styles.textInputField}
                 placeholder="Pickup location"
-                placeholderTextColor="#94A3B8"
+                placeholderTextColor="#64748B"
                 value={pickupText}
                 onChangeText={handlePickupChange}
                 onFocus={() => {
@@ -325,22 +354,25 @@ export default function HomeScreen() {
                 </TouchableOpacity>
               ) : (
                 <TouchableOpacity
-                  onPress={() => dropInputRef.current?.focus?.()}
+                  onPress={() => {
+                    setActiveField('pickup');
+                    pickupInputRef.current?.focus?.();
+                  }}
                   hitSlop={8}
                   style={styles.plusBtn}
                 >
-                  <Ionicons name="add" size={20} color="#64748B" />
+                  <Ionicons name="add" size={22} color="#0F172A" />
                 </TouchableOpacity>
               )}
             </View>
 
-            {/* Drop Location Input */}
-            <View style={[styles.inputRow, activeField === 'destination' && styles.inputRowFocused]}>
+            {/* Drop Location Input Box */}
+            <View style={[styles.inputBox, styles.dropInputBox, activeField === 'destination' && styles.inputBoxFocused]}>
               <TextInput
                 ref={dropInputRef}
                 style={styles.textInputField}
                 placeholder="Drop location"
-                placeholderTextColor="#94A3B8"
+                placeholderTextColor="#64748B"
                 value={dropText}
                 onChangeText={handleDropChange}
                 onFocus={() => {
@@ -367,7 +399,7 @@ export default function HomeScreen() {
           </View>
         </View>
 
-        {/* ─── Map Pill Button (Toggles Map Preview) ─── */}
+        {/* ─── Map Pill Button ─── */}
         <View style={styles.mapPillContainer}>
           <TouchableOpacity
             style={[styles.mapPillBtn, showMap && styles.mapPillBtnActive]}
@@ -379,16 +411,16 @@ export default function HomeScreen() {
           >
             <Ionicons
               name="location-sharp"
-              size={14}
+              size={15}
               color={showMap ? '#FFFFFF' : '#0F172A'}
             />
             <Text style={[styles.mapPillText, showMap && styles.mapPillTextActive]}>
-              {showMap ? 'Hide Map' : 'Map'}
+              Map
             </Text>
           </TouchableOpacity>
         </View>
 
-        {/* ─── Interactive Map (When Map pill is active or route selected) ─── */}
+        {/* ─── Interactive Map (When Map pill is active) ─── */}
         {showMap && (
           <View style={styles.mapWrapper}>
             <SmartMap
@@ -396,10 +428,13 @@ export default function HomeScreen() {
               destination={trip.destination?.coordinates}
               pickupLabel={pickupText || 'Pickup'}
               destinationLabel={dropText || 'Drop'}
-              height={210}
+              height={220}
             />
           </View>
         )}
+
+        {/* ─── Dashed Divider Line Under Map Pill ─── */}
+        <View style={styles.dashedDivider} />
 
         {/* ─── Search Loading Indicator ─── */}
         {isSearching && (
@@ -424,12 +459,12 @@ export default function HomeScreen() {
                 onPress={() => handleSelectLocation(loc)}
                 activeOpacity={0.7}
               >
-                {/* Left Icon: Clock for recents, Pin for live results */}
+                {/* Left Icon: History Clock */}
                 <View style={styles.itemIconCol}>
                   {isRecent ? (
-                    <Ionicons name="time-outline" size={20} color="#475569" />
+                    <MaterialCommunityIcons name="history" size={24} color="#475569" />
                   ) : (
-                    <Ionicons name="location-outline" size={20} color={colors.primary} />
+                    <Ionicons name="location-outline" size={22} color={colors.primary} />
                   )}
                 </View>
 
@@ -449,9 +484,9 @@ export default function HomeScreen() {
                   onPress={() => toggleFavorite(itemId)}
                   hitSlop={8}
                 >
-                  <Ionicons
+                  <MaterialCommunityIcons
                     name={isFav ? 'heart' : 'heart-outline'}
-                    size={20}
+                    size={22}
                     color={isFav ? '#E11D48' : '#94A3B8'}
                   />
                 </TouchableOpacity>
@@ -460,161 +495,22 @@ export default function HomeScreen() {
           })}
         </View>
 
-        {/* ─── Route Options & Search Button (When Route is Chosen) ─── */}
-        <View style={styles.bookingControlsCard}>
-          {/* Date & Passenger row */}
-          <View style={styles.metaRow}>
-            <View style={styles.dateToggleRow}>
-              <TouchableOpacity
-                style={[styles.dateChip, dateSelection === 'today' && styles.dateChipActive]}
-                onPress={() => setDateSelection('today')}
-              >
-                <Text style={[styles.dateChipText, dateSelection === 'today' && styles.dateChipTextActive]}>
-                  Today
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.dateChip, dateSelection === 'tomorrow' && styles.dateChipActive]}
-                onPress={() => setDateSelection('tomorrow')}
-              >
-                <Text style={[styles.dateChipText, dateSelection === 'tomorrow' && styles.dateChipTextActive]}>
-                  Tomorrow
-                </Text>
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.passengerCounter}>
-              <Ionicons name="person-outline" size={15} color={colors.textSecondary} />
-              <Text style={styles.passengerValue}>{passengers} Seat</Text>
-              <View style={styles.counterBtns}>
-                <TouchableOpacity
-                  onPress={() => setPassengers((p) => Math.max(1, p - 1))}
-                  style={styles.counterBtn}
-                >
-                  <Ionicons name="remove" size={13} color="#0F172A" />
-                </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={() => setPassengers((p) => Math.min(4, p + 1))}
-                  style={styles.counterBtn}
-                >
-                  <Ionicons name="add" size={13} color="#0F172A" />
-                </TouchableOpacity>
-              </View>
-            </View>
-          </View>
-
-          {/* Quick Filter Chips */}
-          <View style={styles.preferenceRow}>
-            <TouchableOpacity
-              style={[styles.prefChip, selectedFilter === 'ladies' && styles.prefChipLadiesActive]}
-              onPress={() => setSelectedFilter((prev) => (prev === 'ladies' ? 'all' : 'ladies'))}
-            >
-              <Ionicons
-                name="heart"
-                size={12}
-                color={selectedFilter === 'ladies' ? '#BE185D' : colors.textSecondary}
-              />
-              <Text style={[styles.prefChipText, selectedFilter === 'ladies' && styles.prefChipLadiesTextActive]}>
-                Ladies Only
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.prefChip, selectedFilter === 'instant' && styles.prefChipInstantActive]}
-              onPress={() => setSelectedFilter((prev) => (prev === 'instant' ? 'all' : 'instant'))}
-            >
-              <Ionicons
-                name="flash"
-                size={12}
-                color={selectedFilter === 'instant' ? '#059669' : colors.textSecondary}
-              />
-              <Text style={[styles.prefChipText, selectedFilter === 'instant' && styles.prefChipInstantTextActive]}>
-                Instant
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.prefChip, selectedFilter === 'max2' && styles.prefChipMax2Active]}
-              onPress={() => setSelectedFilter((prev) => (prev === 'max2' ? 'all' : 'max2'))}
-            >
-              <Ionicons
-                name="people"
-                size={12}
-                color={selectedFilter === 'max2' ? '#0284C7' : colors.textSecondary}
-              />
-              <Text style={[styles.prefChipText, selectedFilter === 'max2' && styles.prefChipMax2TextActive]}>
-                Max 2 Back
-              </Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Search Button */}
-          <TouchableOpacity
-            style={[styles.searchBtn, !isRouteReady && styles.searchBtnDisabled]}
-            onPress={handleSearchCarpools}
-            activeOpacity={0.88}
-          >
-            <Ionicons name="search" size={18} color="#FFFFFF" />
-            <Text style={styles.searchBtnText}>Search Rides</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Recently Published Rides (Real Supabase Rides) */}
-        {activeRides.length > 0 && (
-          <View style={styles.publishedRidesSection}>
-            <Text style={styles.sectionTitle}>Recently Published Carpools</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.popularScroll}>
-              {activeRides.map((ride) => (
-                <TouchableOpacity
-                  key={ride.id}
-                  style={styles.routeChip}
-                  onPress={() => {
-                    setPickupText(ride.origin.city);
-                    setDropText(ride.destination.city);
-                    router.push({
-                      pathname: '/carpool-detail' as any,
-                      params: { rideId: ride.id, seats: '1' },
-                    });
-                  }}
-                  activeOpacity={0.8}
-                >
-                  <Text style={styles.routeChipRoute}>
-                    {ride.origin.city} → {ride.destination.city}
-                  </Text>
-                  <View style={styles.routeChipBottom}>
-                    <Text style={styles.routeChipPrice}>₹{ride.pricePerSeat}</Text>
-                    <Text style={styles.routeChipTime}>{ride.availableSeats} seat(s) left</Text>
-                  </View>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          </View>
-        )}
-
-        {/* Publish a Ride Callout */}
-        <TouchableOpacity
-          style={styles.publishBanner}
-          onPress={() => router.push('/(tabs)/publish' as any)}
-          activeOpacity={0.9}
-        >
-          <View style={styles.publishIcon}>
-            <Ionicons name="car-sport" size={20} color={colors.primary} />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.publishTitle}>Driving somewhere?</Text>
-            <Text style={styles.publishSub}>Share empty seats, split fuel costs.</Text>
-          </View>
-          <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
-        </TouchableOpacity>
-
-        <View style={{ height: 40 }} />
+        <View style={{ height: 100 }} />
       </ScrollView>
 
-      {/* Safety Hub Modal */}
-      <SafetyModal
-        visible={isSafetyVisible}
-        onClose={() => setIsSafetyVisible(false)}
-      />
+      {/* ─── Bottom Floating "Search Carpools" Action (When Both Selected) ─── */}
+      {isRouteReady && (
+        <View style={styles.bottomBar}>
+          <TouchableOpacity
+            style={styles.searchRidesBtn}
+            onPress={() => navigateToResults(pickupText, dropText)}
+            activeOpacity={0.88}
+          >
+            <Text style={styles.searchRidesText}>Find Available Carpools</Text>
+            <Ionicons name="arrow-forward" size={18} color="#FFFFFF" />
+          </TouchableOpacity>
+        </View>
+      )}
     </SafeAreaView>
   );
 }
@@ -625,103 +521,112 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
   },
 
-  /* Top Rapido Header */
+  /* ─── Top Rapido Header ─── */
   topHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.sm,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
   },
-  topHeaderRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+  backBtn: {
+    padding: 4,
   },
   forMeDropdown: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    borderWidth: 1,
+    gap: 6,
+    borderWidth: 1.5,
     borderColor: '#E2E8F0',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
     borderRadius: borderRadius.pill,
     backgroundColor: '#FFFFFF',
   },
   forMeText: {
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: '700',
     color: '#0F172A',
   },
-  safetyHeaderBtn: {
+
+  dropdownMenu: {
+    position: 'absolute',
+    top: 55,
+    right: 16,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    zIndex: 999,
+    paddingVertical: 6,
+    minWidth: 160,
+    ...shadows.md,
+  },
+  dropdownMenuItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    backgroundColor: '#ECFDF5',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: borderRadius.pill,
+    gap: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
   },
-  safetyHeaderBtnText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#059669',
+  dropdownMenuText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#0F172A',
   },
 
   scrollContent: {
-    paddingBottom: spacing.huge,
+    paddingBottom: 40,
   },
 
-  /* Alert Banner (Rapido Style) */
+  /* ─── Alert Banner (Rapido Exact) ─── */
   alertBanner: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFF1F2',
-    marginHorizontal: spacing.lg,
-    marginTop: spacing.md,
-    marginBottom: spacing.xs,
-    padding: spacing.md,
-    borderRadius: borderRadius.lg,
-    gap: spacing.sm,
+    backgroundColor: '#FFF0F2',
+    marginHorizontal: 16,
+    marginTop: 8,
+    marginBottom: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 12,
+    gap: 12,
   },
   alertIconCircle: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: '#FFE4E6',
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: '#334155',
     alignItems: 'center',
     justifyContent: 'center',
   },
   alertBannerText: {
     flex: 1,
-    fontSize: 12,
-    fontWeight: '600',
+    fontSize: 13,
+    fontWeight: '500',
     color: '#334155',
-    lineHeight: 16,
+    lineHeight: 18,
   },
 
-  /* Dual Route Card (Rapido Exact Design) */
+  /* ─── Dual Route Card (Rapido Exact) ─── */
   routeCard: {
     flexDirection: 'row',
-    marginHorizontal: spacing.lg,
-    marginTop: spacing.sm,
+    marginHorizontal: 16,
+    marginTop: 4,
     backgroundColor: '#FFFFFF',
   },
   routeIndicatorCol: {
-    width: 24,
+    width: 28,
     alignItems: 'center',
-    paddingTop: 14,
+    paddingTop: 13,
     marginRight: 10,
   },
   pickupGreenRing: {
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    borderWidth: 2,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    borderWidth: 2.5,
     borderColor: '#10B981',
     alignItems: 'center',
     justifyContent: 'center',
@@ -742,9 +647,9 @@ const styles = StyleSheet.create({
     marginVertical: 4,
   },
   dropOrangeCircle: {
-    width: 16,
-    height: 16,
-    borderRadius: 8,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
     backgroundColor: '#F97316',
     alignItems: 'center',
     justifyContent: 'center',
@@ -753,26 +658,30 @@ const styles = StyleSheet.create({
   /* Inputs Column */
   inputsCol: {
     flex: 1,
-    gap: 8,
+    gap: 10,
   },
-  inputRow: {
+  inputBox: {
+    height: 46,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#FFFFFF',
     borderWidth: 1.5,
-    borderColor: '#E2E8F0',
-    borderRadius: borderRadius.md,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    borderColor: '#0F172A',
+    borderRadius: 10,
+    paddingHorizontal: 14,
   },
-  inputRowFocused: {
-    borderColor: '#0284C7',
+  dropInputBox: {
+    backgroundColor: '#F8FAFC',
+    borderColor: 'transparent',
+  },
+  inputBoxFocused: {
+    borderColor: '#0F172A',
     backgroundColor: '#FFFFFF',
   },
   textInputField: {
     flex: 1,
-    fontSize: 14,
-    fontWeight: '600',
+    fontSize: 15,
+    fontWeight: '500',
     color: '#0F172A',
     padding: 0,
   },
@@ -780,11 +689,11 @@ const styles = StyleSheet.create({
     padding: 2,
   },
 
-  /* Map Pill Button */
+  /* ─── Map Pill Button ─── */
   mapPillContainer: {
-    paddingHorizontal: spacing.lg,
-    marginTop: 8,
-    marginBottom: spacing.xs,
+    paddingHorizontal: 16,
+    marginTop: 12,
+    marginBottom: 8,
   },
   mapPillBtn: {
     flexDirection: 'row',
@@ -792,12 +701,15 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
     gap: 6,
     backgroundColor: '#F1F5F9',
-    paddingHorizontal: 14,
+    paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: borderRadius.pill,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
   },
   mapPillBtnActive: {
     backgroundColor: colors.primary,
+    borderColor: colors.primary,
   },
   mapPillText: {
     fontSize: 13,
@@ -810,12 +722,20 @@ const styles = StyleSheet.create({
 
   /* Map Wrapper */
   mapWrapper: {
-    marginHorizontal: spacing.lg,
-    marginVertical: spacing.sm,
-    borderRadius: borderRadius.xl,
+    marginHorizontal: 16,
+    marginVertical: 10,
+    borderRadius: 16,
     overflow: 'hidden',
     borderWidth: 1,
     borderColor: '#E2E8F0',
+  },
+
+  /* Dashed Divider Under Map Pill */
+  dashedDivider: {
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E8F0',
+    borderStyle: 'dashed',
+    marginTop: 8,
   },
 
   /* Searching Indicator */
@@ -823,263 +743,72 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
   },
   searchingText: {
-    fontSize: 12,
-    color: colors.textSecondary,
+    fontSize: 13,
+    color: '#64748B',
     fontWeight: '500',
   },
 
-  /* Locations List */
+  /* ─── Locations List ─── */
   locationsListContainer: {
-    marginTop: spacing.xs,
-    borderTopWidth: 1,
-    borderTopColor: '#F1F5F9',
+    backgroundColor: '#FFFFFF',
   },
   locationListItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: spacing.lg,
-    paddingVertical: 13,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
     borderBottomWidth: 1,
-    borderBottomColor: '#F8FAFC',
+    borderBottomColor: '#F1F5F9',
+    borderStyle: 'dashed',
   },
   itemIconCol: {
-    width: 28,
+    width: 32,
     alignItems: 'flex-start',
   },
   itemTextCol: {
     flex: 1,
-    marginRight: 10,
+    paddingRight: 10,
   },
   itemTitle: {
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '700',
     color: '#0F172A',
     marginBottom: 2,
   },
   itemSubtitle: {
-    fontSize: 12,
+    fontSize: 13,
     color: '#64748B',
     fontWeight: '400',
   },
   heartBtn: {
-    padding: 4,
+    padding: 6,
   },
 
-  /* Booking Controls Card */
-  bookingControlsCard: {
-    marginHorizontal: spacing.lg,
-    marginTop: spacing.md,
-    backgroundColor: '#F8FAFC',
-    borderRadius: borderRadius.xl,
-    padding: spacing.md,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
+  /* ─── Floating Bottom Bar ─── */
+  bottomBar: {
+    position: 'absolute',
+    bottom: Platform.OS === 'ios' ? 24 : 16,
+    left: 16,
+    right: 16,
+    zIndex: 10,
   },
-  metaRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  dateToggleRow: {
-    flexDirection: 'row',
-    gap: 4,
-  },
-  dateChip: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: borderRadius.pill,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  dateChipActive: {
+  searchRidesBtn: {
     backgroundColor: colors.primary,
-    borderColor: colors.primary,
-  },
-  dateChipText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#64748B',
-  },
-  dateChipTextActive: {
-    color: '#FFFFFF',
-    fontWeight: '700',
-  },
-  passengerCounter: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: borderRadius.pill,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  passengerValue: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#0F172A',
-  },
-  counterBtns: {
-    flexDirection: 'row',
-    gap: 2,
-    marginLeft: 4,
-  },
-  counterBtn: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: '#F1F5F9',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  preferenceRow: {
-    flexDirection: 'row',
-    gap: 6,
-    marginTop: spacing.sm,
-  },
-  prefChip: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 4,
-    paddingVertical: 7,
-    borderRadius: borderRadius.pill,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  prefChipText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#64748B',
-  },
-  prefChipLadiesActive: {
-    backgroundColor: '#FCE7F3',
-    borderColor: '#F472B6',
-  },
-  prefChipLadiesTextActive: {
-    color: '#BE185D',
-    fontWeight: '700',
-  },
-  prefChipInstantActive: {
-    backgroundColor: '#ECFDF5',
-    borderColor: '#6EE7B7',
-  },
-  prefChipInstantTextActive: {
-    color: '#059669',
-    fontWeight: '700',
-  },
-  prefChipMax2Active: {
-    backgroundColor: '#EFF6FF',
-    borderColor: '#93C5FD',
-  },
-  prefChipMax2TextActive: {
-    color: '#0284C7',
-    fontWeight: '700',
-  },
-
-  searchBtn: {
-    backgroundColor: colors.primary,
-    height: 46,
+    height: 50,
     borderRadius: borderRadius.pill,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: spacing.xs,
-    marginTop: spacing.md,
-    ...shadows.sm,
+    gap: 8,
+    ...shadows.lg,
   },
-  searchBtnDisabled: {
-    opacity: 0.6,
-  },
-  searchBtnText: {
-    fontSize: typography.fontSizes.base,
+  searchRidesText: {
+    fontSize: 16,
     fontWeight: '700',
     color: '#FFFFFF',
-  },
-
-  /* Published Rides Section */
-  publishedRidesSection: {
-    marginHorizontal: spacing.lg,
-    marginTop: spacing.lg,
-  },
-  sectionTitle: {
-    fontSize: typography.fontSizes.sm,
-    fontWeight: '700',
-    color: '#0F172A',
-    marginBottom: spacing.xs,
-  },
-  popularScroll: {
-    marginBottom: spacing.sm,
-  },
-  routeChip: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: borderRadius.lg,
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.lg,
-    marginRight: spacing.sm,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    minWidth: 160,
-  },
-  routeChipRoute: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#0F172A',
-    marginBottom: 4,
-  },
-  routeChipBottom: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-  },
-  routeChipPrice: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: colors.primary,
-  },
-  routeChipTime: {
-    fontSize: 11,
-    color: '#64748B',
-  },
-
-  /* Publish Banner */
-  publishBanner: {
-    marginHorizontal: spacing.lg,
-    marginTop: spacing.md,
-    backgroundColor: '#FFFFFF',
-    borderRadius: borderRadius.xl,
-    padding: spacing.md,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  publishIcon: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: '#EEF2FF',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  publishTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#0F172A',
-  },
-  publishSub: {
-    fontSize: 11,
-    color: '#64748B',
-    marginTop: 1,
   },
 });

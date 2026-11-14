@@ -23,7 +23,7 @@ import {
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { colors, spacing, borderRadius, typography, shadows } from '@/theme/tokens';
 import type { PlaceSuggestion, RecentSearch, ResolvedLocation } from '@/models/types';
 import { RealGeocodingProvider } from '@/services/geocoding';
@@ -386,9 +386,9 @@ export default function LocationSearchScreen() {
               {/* Left Icon: Clock for recents, Pin for live results */}
               <View style={styles.itemIconCol}>
                 {item.isRecent ? (
-                  <Ionicons name="time-outline" size={20} color="#475569" />
+                  <MaterialCommunityIcons name="history" size={24} color="#475569" />
                 ) : (
-                  <Ionicons name="location-outline" size={20} color={colors.primary} />
+                  <Ionicons name="location-outline" size={22} color={colors.primary} />
                 )}
               </View>
 
@@ -408,9 +408,9 @@ export default function LocationSearchScreen() {
                 onPress={() => toggleFavorite(item.id)}
                 hitSlop={8}
               >
-                <Ionicons
+                <MaterialCommunityIcons
                   name={isFav ? 'heart' : 'heart-outline'}
-                  size={20}
+                  size={22}
                   color={isFav ? '#E11D48' : '#94A3B8'}
                 />
               </TouchableOpacity>
@@ -622,6 +622,7 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     borderBottomWidth: 1,
     borderBottomColor: '#F1F5F9',
+    borderStyle: 'dashed',
   },
   itemIconCol: {
     width: 28,

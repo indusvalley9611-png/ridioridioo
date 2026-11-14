@@ -3,8 +3,11 @@ import { Tabs } from 'expo-router';
 import { View, StyleSheet, Platform } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { colors, typography, borderRadius } from '@/theme/tokens';
+import { useLanguage } from '@/context/LanguageContext';
 
 export default function TabLayout() {
+  const { t } = useLanguage();
+
   return (
     <Tabs
       screenOptions={{
@@ -19,7 +22,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Search',
+          title: t('find_ride'),
           tabBarIcon: ({ color, focused }) => (
             <View style={[styles.iconContainer, focused && styles.iconContainerActive]}>
               <Ionicons
@@ -34,7 +37,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="publish"
         options={{
-          title: 'Publish',
+          title: t('publish_ride'),
           tabBarIcon: ({ color, focused }) => (
             <View style={[styles.iconContainer, styles.publishContainer, focused && styles.iconContainerActive]}>
               <Ionicons
@@ -49,7 +52,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="rides"
         options={{
-          title: 'Your Rides',
+          title: t('my_rides'),
           tabBarIcon: ({ color, focused }) => (
             <View style={[styles.iconContainer, focused && styles.iconContainerActive]}>
               <MaterialCommunityIcons
@@ -64,7 +67,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="profile"
         options={{
-          title: 'Profile',
+          title: t('profile'),
           tabBarIcon: ({ color, focused }) => (
             <View style={[styles.iconContainer, focused && styles.iconContainerActive]}>
               <Ionicons

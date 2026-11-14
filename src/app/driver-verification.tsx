@@ -32,6 +32,8 @@ export default function DriverVerificationScreen() {
   const [profile, setProfile] = useState<DriverKycProfile | null>(null);
 
   // Form Fields
+  const [driverName, setDriverName] = useState('');
+  const [driverPhone, setDriverPhone] = useState('');
   const [dlNumber, setDlNumber] = useState('');
   const [dlExpiry, setDlExpiry] = useState('');
   const [aadhaarLast4, setAadhaarLast4] = useState('');
@@ -47,13 +49,15 @@ export default function DriverVerificationScreen() {
         const p = await kycService.getDriverProfile();
         if (isMounted) {
           setProfile(p);
-          setDlNumber(p.drivingLicenseNumber);
-          setDlExpiry(p.drivingLicenseExpiry);
-          setAadhaarLast4(p.aadhaarLast4);
-          setRcNumber(p.vehicle.registrationNumber);
-          setMake(p.vehicle.make);
-          setModel(p.vehicle.model);
-          setFuelType(p.vehicle.fuelType);
+          setDriverName(p.fullName || '');
+          setDriverPhone(p.phone || '');
+          setDlNumber(p.drivingLicenseNumber || '');
+          setDlExpiry(p.drivingLicenseExpiry || '');
+          setAadhaarLast4(p.aadhaarLast4 || '');
+          setRcNumber(p.vehicle.registrationNumber || '');
+          setMake(p.vehicle.make || '');
+          setModel(p.vehicle.model || '');
+          setFuelType(p.vehicle.fuelType || 'petrol');
           setLoading(false);
         }
       } catch {
@@ -66,6 +70,12 @@ export default function DriverVerificationScreen() {
   }, []);
 
   const handleSubmit = async () => {
+    if (!driverName.trim() || !driverPhone.trim()) {
+      Alert.alert('Incomplete Form', 'Please enter your Full Name and Mobile Phone Number.');
+      triggerHaptic.error();
+      return;
+    }
+
     if (!dlNumber.trim() || !rcNumber.trim() || aadhaarLast4.length < 4) {
       Alert.alert('Incomplete Form', 'Please provide your Driving License, Aadhaar last 4 digits, and Vehicle RC.');
       triggerHaptic.error();
@@ -77,17 +87,17 @@ export default function DriverVerificationScreen() {
 
     try {
       const updated = await kycService.submitKyc({
-        userId: profile?.userId || 'usr_dev',
-        fullName: profile?.fullName || 'Gokul R.',
-        phone: profile?.phone || '+919876543210',
-        drivingLicenseNumber: dlNumber.toUpperCase(),
+        userId: profile?.userId || `usr_${Date.now()}`,
+        fullName: driverName.trim(),
+        phone: driverPhone.trim(),
+        drivingLicenseNumber: dlNumber.toUpperCase().trim(),
         drivingLicenseExpiry: dlExpiry || '2031-12-31',
-        aadhaarLast4,
+        aadhaarLast4: aadhaarLast4.trim(),
         vehicle: {
-          registrationNumber: rcNumber.toUpperCase(),
-          make: make || 'Tata',
-          model: model || 'Nexon EV',
-          color: 'Grey',
+          registrationNumber: rcNumber.toUpperCase().trim(),
+          make: make.trim() || 'Maruti Suzuki',
+          model: model.trim() || 'Swift',
+          color: 'White',
           fuelType,
           insuranceValidUntil: '2027-12-31',
           seatingCapacity: 4,
@@ -161,10 +171,31 @@ export default function DriverVerificationScreen() {
           </Text>
         </View>
 
+        {/* Form: Driver Identity */}
+        <View style={styles.sectionCard}>
+          <Text style={styles.sectionHeader}>1. Driver Personal Details</Text>
+          <Text style={styles.inputLabel}>Full Legal Name (as per Govt ID)</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="e.g. Ramesh Kumar"
+            value={driverName}
+            onChangeText={setDriverName}
+          />
+
+          <Text style={styles.inputLabel}>Verified Mobile Phone Number</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="e.g. +91 9876543210"
+            value={driverPhone}
+            onChangeText={setDriverPhone}
+            keyboardType="phone-pad"
+          />
+        </View>
+
         {/* Form: Driving License */}
         <View style={styles.sectionCard}>
-          <Text style={styles.sectionHeader}>1. Driving License (DL)</Text>
-          <Text style={styles.inputLabel}>DL Number (e.g. TN-01-20210045982)</Text>
+          <Text style={styles.sectionHeader}>2. Driving License (DL)</Text>
+          <Text style={styles.inputLabel}>DL Number (e.g. KA-01-20220012345)</Text>
           <TextInput
             style={styles.input}
             placeholder="Enter Driving License Number"

@@ -20,6 +20,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { colors, spacing, borderRadius, typography, shadows } from '@/theme/tokens';
 import { CarpoolService } from '@/services/carpoolService';
+import { kycService } from '@/services/kycService';
 import type { CarpoolRide } from '@/models/carpool';
 import { triggerHaptic } from '@/utils/haptics';
 
@@ -71,11 +72,15 @@ export default function CarpoolDetailScreen() {
     setIsBooking(true);
     try {
       triggerHaptic.impactMedium();
+      const user = await kycService.getUserProfile();
+      const passengerName = user.fullName && user.fullName !== 'NEXORA Rider' ? user.fullName : 'Passenger';
+      const passengerPhone = user.phone || '9876543210';
+
       const ticket = await CarpoolService.bookRide(
         ride.id,
         selectedSeats,
-        'Gokul (You)',
-        '+91 98765 43210'
+        passengerName,
+        passengerPhone
       );
       triggerHaptic.success();
 

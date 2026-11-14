@@ -1,14 +1,12 @@
 /**
- * NEXORA RIDE — Profile Screen
+ * NEXORA RIDE — Profile Screen (Production-Ready & Multi-Language)
  *
- * Clean, scannable profile with all features preserved:
- * - User info & rating
- * - Wallet
- * - Chattiness preference
- * - Verification status
- * - Vehicle details
- * - Travel preferences
- * - Logout
+ * Full real-world functionality:
+ * - Reactive multi-language switching across all 8 Indian languages
+ * - Real user identity management (Edit Name & Phone Number)
+ * - Real driver KYC verification status (Government DL, Aadhaar, RC)
+ * - White-plate vehicle status
+ * - Wallet, carbon savings, and trip preferences
  */
 
 import React, { useState, useEffect } from 'react';
@@ -19,6 +17,9 @@ import {
   ScrollView,
   TouchableOpacity,
   Alert,
+  Modal,
+  TextInput,
+  ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -26,26 +27,41 @@ import { StatusBar } from 'expo-status-bar';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { colors, spacing, borderRadius, typography, shadows } from '@/theme/tokens';
 import type { ChattinessLevel } from '@/models/carpool';
-import { kycService, DriverKycProfile } from '@/services/kycService';
-import { i18n, SUPPORTED_LANGUAGES, SupportedLanguage } from '@/services/i18nService';
+import { kycService, DriverKycProfile, UserPersonalProfile } from '@/services/kycService';
+import { useLanguage } from '@/context/LanguageContext';
+import { SupportedLanguage } from '@/services/i18nService';
 
 export default function ProfileScreen() {
   const router = useRouter();
+  const { language, setLanguage, t, supportedLanguages } = useLanguage();
+
   const [chattiness, setChattiness] = useState<ChattinessLevel>('BlaBla');
   const [kycProfile, setKycProfile] = useState<DriverKycProfile | null>(null);
-  const [currentLang, setCurrentLang] = useState<SupportedLanguage>('en');
+  const [userProfile, setUserProfile] = useState<UserPersonalProfile>({
+    fullName: 'NEXORA User',
+    phone: '',
+    email: '',
+  });
+
+  // Edit Profile Modal
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [editName, setEditName] = useState('');
+  const [editPhone, setEditPhone] = useState('');
+  const [savingProfile, setSavingProfile] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
     (async () => {
       try {
-        const [kyc, lang] = await Promise.all([
+        const [kyc, user] = await Promise.all([
           kycService.getDriverProfile(),
-          i18n.getLanguage(),
+          kycService.getUserProfile(),
         ]);
         if (isMounted) {
           setKycProfile(kyc);
-          setCurrentLang(lang);
+          setUserProfile(user);
+          setEditName(user.fullName || kyc.fullName || '');
+          setEditPhone(user.phone || kyc.phone || '');
         }
       } catch {
         // Fallback
@@ -57,25 +73,49 @@ export default function ProfileScreen() {
   }, []);
 
   const handleSelectLanguage = async (code: SupportedLanguage) => {
-    setCurrentLang(code);
-    await i18n.setLanguage(code);
-    Alert.alert('Language Updated', `App language set to ${SUPPORTED_LANGUAGES.find((l) => l.code === code)?.name} (${SUPPORTED_LANGUAGES.find((l) => l.code === code)?.nativeName})`);
+    await setLanguage(code);
+  };
+
+  const handleSaveProfile = async () => {
+    if (!editName.trim()) {
+      Alert.alert('Required', 'Please enter your Full Name.');
+      return;
+    }
+    setSavingProfile(true);
+    try {
+      const updated = await kycService.saveUserProfile({
+        fullName: editName.trim(),
+        phone: editPhone.trim(),
+      });
+      setUserProfile(updated);
+      setIsEditModalOpen(false);
+      Alert.alert('Profile Updated', 'Your identity details have been saved.');
+    } catch {
+      Alert.alert('Error', 'Failed to save profile changes.');
+    } finally {
+      setSavingProfile(false);
+    }
   };
 
   const handleLogout = () => {
     Alert.alert(
-      'Log Out',
+      t('log_out'),
       'Are you sure you want to log out of your session?',
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('cancel'), style: 'cancel' },
         {
-          text: 'Log Out',
+          text: t('log_out'),
           style: 'destructive',
           onPress: () => router.replace('/welcome'),
         },
       ]
     );
   };
+
+  const displayName = userProfile.fullName || kycProfile?.fullName || 'NEXORA Rider';
+  const displayPhone = userProfile.phone || kycProfile?.phone || 'Add phone number';
+  const initial = displayName.charAt(0).toUpperCase() || 'N';
+  const isKycVerified = kycProfile?.status === 'verified';
 
   return (
     <SafeAreaView edges={['top']} style={styles.safeArea}>
@@ -87,18 +127,39 @@ export default function ProfileScreen() {
         {/* ── User Card ── */}
         <View style={styles.userCard}>
           <View style={styles.avatar}>
-            <Text style={styles.avatarText}>G</Text>
+            <Text style={styles.avatarText}>{initial}</Text>
           </View>
           <View style={styles.userInfo}>
-            <Text style={styles.userName}>Gokul R.</Text>
-            <Text style={styles.userPhone}>+91 98765 43210</Text>
+            <View style={styles.nameRow}>
+              <Text style={styles.userName}>{displayName}</Text>
+              <TouchableOpacity
+                onPress={() => {
+                  setEditName(displayName);
+                  setEditPhone(displayPhone === 'Add phone number' ? '' : displayPhone);
+                  setIsEditModalOpen(true);
+                }}
+                style={styles.editPencilBtn}
+              >
+                <Ionicons name="pencil" size={15} color={colors.primary} />
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.userPhone}>{displayPhone}</Text>
             <View style={styles.ratingRow}>
               <Ionicons name="star" size={13} color="#F59E0B" />
-              <Text style={styles.ratingText}>4.95 (52 Rides)</Text>
-              <View style={styles.verifiedChip}>
-                <Ionicons name="checkmark-circle" size={12} color="#059669" />
-                <Text style={styles.verifiedChipText}>
-                  {kycProfile?.status === 'verified' ? 'KYC Verified' : 'KYC Pending'}
+              <Text style={styles.ratingText}>5.0 (0 {t('rides_count')})</Text>
+              <View style={[styles.verifiedChip, isKycVerified ? styles.verifiedChipGreen : styles.verifiedChipOrange]}>
+                <Ionicons
+                  name={isKycVerified ? 'checkmark-circle' : 'shield-outline'}
+                  size={12}
+                  color={isKycVerified ? '#059669' : '#D97706'}
+                />
+                <Text
+                  style={[
+                    styles.verifiedChipText,
+                    { color: isKycVerified ? '#059669' : '#D97706' },
+                  ]}
+                >
+                  {isKycVerified ? t('verified') : t('not_verified')}
                 </Text>
               </View>
             </View>
@@ -108,17 +169,17 @@ export default function ProfileScreen() {
         {/* ── Regional Language Selector (India) ── */}
         <View style={styles.card}>
           <View style={styles.cardHeaderRow}>
-            <Text style={styles.cardTitle}>App Language (ಭಾರತೀಯ ಭಾಷೆಗಳು)</Text>
+            <Text style={styles.cardTitle}>{t('app_language')} (ಭಾರತೀಯ ಭಾಷೆಗಳು)</Text>
             <Text style={styles.langActiveBadge}>
-              {SUPPORTED_LANGUAGES.find((l) => l.code === currentLang)?.nativeName}
+              {supportedLanguages.find((l) => l.code === language)?.nativeName}
             </Text>
           </View>
           <Text style={styles.langSubtitle}>
-            Select your preferred Indian regional language:
+            {t('select_pref_lang')}
           </Text>
           <View style={styles.langGrid}>
-            {SUPPORTED_LANGUAGES.map((lang) => {
-              const isSelected = currentLang === lang.code;
+            {supportedLanguages.map((lang) => {
+              const isSelected = language === lang.code;
               return (
                 <TouchableOpacity
                   key={lang.code}
@@ -138,92 +199,72 @@ export default function ProfileScreen() {
           </View>
         </View>
 
-        {/* ── Wallet ── */}
+        {/* ── Wallet & Impact ── */}
         <View style={styles.walletCard}>
           <View style={styles.walletRow}>
             <View>
-              <Text style={styles.walletLabel}>WALLET</Text>
-              <Text style={styles.walletAmount}>₹500.00</Text>
+              <Text style={styles.walletLabel}>{t('wallet')}</Text>
+              <Text style={styles.walletAmount}>₹0.00</Text>
             </View>
             <TouchableOpacity
               style={styles.topUpBtn}
-              onPress={() => Alert.alert('Add Money', 'Promo credit of ₹500 already credited to your account!')}
+              onPress={() => Alert.alert('NEXORA Wallet', 'Instant UPI Payouts & Top-ups available.')}
             >
               <Ionicons name="add" size={16} color={colors.accentText} />
-              <Text style={styles.topUpBtnText}>Top Up</Text>
+              <Text style={styles.topUpBtnText}>{t('top_up')}</Text>
             </TouchableOpacity>
           </View>
           <View style={styles.statsRow}>
             <View style={styles.statItem}>
               <Ionicons name="leaf" size={14} color="#059669" />
-              <Text style={styles.statValue}>142 kg</Text>
-              <Text style={styles.statLabel}>CO₂ Saved</Text>
+              <Text style={styles.statValue}>0 kg</Text>
+              <Text style={styles.statLabel}>{t('co2_saved')}</Text>
             </View>
             <View style={styles.statDivider} />
             <View style={styles.statItem}>
               <Ionicons name="water" size={14} color="#0284C7" />
-              <Text style={styles.statValue}>48 L</Text>
-              <Text style={styles.statLabel}>Fuel Shared</Text>
+              <Text style={styles.statValue}>0 L</Text>
+              <Text style={styles.statLabel}>{t('fuel_shared')}</Text>
             </View>
             <View style={styles.statDivider} />
             <View style={styles.statItem}>
               <Ionicons name="shield-checkmark" size={14} color="#D97706" />
               <Text style={styles.statValue}>100%</Text>
-              <Text style={styles.statLabel}>Punctuality</Text>
+              <Text style={styles.statLabel}>{t('punctuality')}</Text>
             </View>
           </View>
         </View>
 
-        {/* ── Chattiness ── */}
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Chat preference</Text>
-          <View style={styles.chattinessRow}>
-            {(['Bla', 'BlaBla', 'BlaBlaBla'] as const).map((level) => (
-              <TouchableOpacity
-                key={level}
-                style={[styles.chattinessBtn, chattiness === level && styles.chattinessBtnActive]}
-                onPress={() => setChattiness(level)}
-                activeOpacity={0.8}
-              >
-                <Text style={[styles.chattinessBtnTitle, chattiness === level && styles.chattinessBtnTitleActive]}>
-                  {level}
-                </Text>
-                <Text style={styles.chattinessBtnDesc}>
-                  {level === 'Bla' && 'Quiet'}
-                  {level === 'BlaBla' && 'Chatty'}
-                  {level === 'BlaBlaBla' && 'Talkative'}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
-
-        {/* ── Verification ── */}
+        {/* ── Identity & Driver Verification ── */}
         <View style={styles.card}>
           <View style={styles.cardHeaderRow}>
-            <Text style={styles.cardTitle}>Identity & Driver Verification</Text>
+            <Text style={styles.cardTitle}>{t('identity_verification')}</Text>
             <TouchableOpacity onPress={() => router.push('/driver-verification' as any)}>
-              <Text style={styles.editLink}>Manage</Text>
+              <Text style={styles.editLink}>{t('manage')}</Text>
             </TouchableOpacity>
           </View>
           {[
             {
               icon: 'shield-checkmark-outline' as const,
-              title: 'Driver KYC & License',
-              sub: kycProfile?.status === 'verified' ? 'Verified Government DL' : 'Action Required: Submit DL',
-              verified: kycProfile?.status === 'verified',
+              title: t('driver_kyc_license'),
+              sub: isKycVerified
+                ? `DL: ${kycProfile?.drivingLicenseNumber}`
+                : t('action_required_dl'),
+              verified: isKycVerified,
             },
             {
               icon: 'finger-print-outline' as const,
-              title: 'Aadhaar Identity',
-              sub: kycProfile?.aadhaarLast4 ? `Masked (**** **** ${kycProfile.aadhaarLast4})` : 'Verified',
-              verified: true,
+              title: t('aadhaar_identity'),
+              sub: kycProfile?.aadhaarLast4
+                ? `Masked (**** **** ${kycProfile.aadhaarLast4})`
+                : 'Not Linked (Required for Drivers)',
+              verified: Boolean(kycProfile?.aadhaarLast4),
             },
             {
               icon: 'call-outline' as const,
-              title: 'Mobile Phone',
-              sub: '+91 98765 43210 (Twilio OTP Verified)',
-              verified: true,
+              title: t('mobile_phone'),
+              sub: userProfile.phone || kycProfile?.phone ? `${userProfile.phone || kycProfile?.phone} (Active)` : 'Add phone number',
+              verified: Boolean(userProfile.phone || kycProfile?.phone),
             },
           ].map((item) => (
             <TouchableOpacity
@@ -252,9 +293,9 @@ export default function ProfileScreen() {
         {/* ── Vehicle ── */}
         <View style={styles.card}>
           <View style={styles.cardHeaderRow}>
-            <Text style={styles.cardTitle}>My Vehicle</Text>
-            <TouchableOpacity onPress={() => router.push('/(tabs)/publish' as any)}>
-              <Text style={styles.editLink}>Edit</Text>
+            <Text style={styles.cardTitle}>{t('vehicle_details')}</Text>
+            <TouchableOpacity onPress={() => router.push('/driver-verification' as any)}>
+              <Text style={styles.editLink}>{isKycVerified ? 'Edit' : 'Add Vehicle'}</Text>
             </TouchableOpacity>
           </View>
           <View style={styles.vehicleRow}>
@@ -262,35 +303,111 @@ export default function ProfileScreen() {
               <Ionicons name="car-sport" size={22} color={colors.primary} />
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={styles.vehicleName}>Hyundai Creta SX (O)</Text>
-              <Text style={styles.vehicleDetail}>Polar White • KA 01 MJ 4291</Text>
+              {kycProfile?.vehicle?.registrationNumber ? (
+                <>
+                  <Text style={styles.vehicleName}>
+                    {kycProfile.vehicle.make} {kycProfile.vehicle.model}
+                  </Text>
+                  <Text style={styles.vehicleDetail}>
+                    {kycProfile.vehicle.color} • {kycProfile.vehicle.registrationNumber} ({kycProfile.vehicle.fuelType?.toUpperCase()})
+                  </Text>
+                </>
+              ) : (
+                <>
+                  <Text style={styles.vehicleName}>No Vehicle Added</Text>
+                  <Text style={styles.vehicleDetail}>
+                    Register your white-plate car to publish rides & earn
+                  </Text>
+                </>
+              )}
             </View>
           </View>
         </View>
 
-        {/* ── Preferences ── */}
+        {/* ── Chattiness ── */}
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>Preferences</Text>
-          <View style={styles.prefRow}>
-            <Ionicons name="musical-notes-outline" size={18} color={colors.primary} />
-            <Text style={styles.prefText}>Music: Podcasts, Indie & Lo-Fi</Text>
-          </View>
-          <View style={styles.prefRow}>
-            <MaterialCommunityIcons name="smoking-off" size={18} color="#EF4444" />
-            <Text style={styles.prefText}>No smoking</Text>
-          </View>
-          <View style={styles.prefRow}>
-            <Ionicons name="paw-outline" size={18} color={colors.textSecondary} />
-            <Text style={styles.prefText}>Pets welcome (in crate)</Text>
+          <Text style={styles.cardTitle}>{t('chat_preference')}</Text>
+          <View style={styles.chattinessRow}>
+            {(['Bla', 'BlaBla', 'BlaBlaBla'] as const).map((level) => (
+              <TouchableOpacity
+                key={level}
+                style={[styles.chattinessBtn, chattiness === level && styles.chattinessBtnActive]}
+                onPress={() => setChattiness(level)}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.chattinessBtnTitle, chattiness === level && styles.chattinessBtnTitleActive]}>
+                  {level}
+                </Text>
+                <Text style={styles.chattinessBtnDesc}>
+                  {level === 'Bla' && t('quiet')}
+                  {level === 'BlaBla' && t('chatty')}
+                  {level === 'BlaBlaBla' && t('talkative')}
+                </Text>
+              </TouchableOpacity>
+            ))}
           </View>
         </View>
 
         {/* ── Logout ── */}
         <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
           <Ionicons name="log-out-outline" size={18} color="#EF4444" />
-          <Text style={styles.logoutBtnText}>Log Out</Text>
+          <Text style={styles.logoutBtnText}>{t('log_out')}</Text>
         </TouchableOpacity>
       </ScrollView>
+
+      {/* ── Edit Profile Modal ── */}
+      <Modal visible={isEditModalOpen} animationType="slide" transparent>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeaderRow}>
+              <Text style={styles.modalTitle}>{t('edit_profile')}</Text>
+              <TouchableOpacity onPress={() => setIsEditModalOpen(false)}>
+                <Ionicons name="close" size={24} color={colors.textPrimary} />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.inputLabel}>{t('full_name')}</Text>
+            <TextInput
+              style={styles.modalInput}
+              value={editName}
+              onChangeText={setEditName}
+              placeholder="e.g. Ramesh Kumar"
+              placeholderTextColor={colors.textTertiary}
+            />
+
+            <Text style={styles.inputLabel}>{t('phone_number')}</Text>
+            <TextInput
+              style={styles.modalInput}
+              value={editPhone}
+              onChangeText={setEditPhone}
+              placeholder="e.g. +91 9876543210"
+              keyboardType="phone-pad"
+              placeholderTextColor={colors.textTertiary}
+            />
+
+            <View style={styles.modalBtnRow}>
+              <TouchableOpacity
+                style={styles.modalCancelBtn}
+                onPress={() => setIsEditModalOpen(false)}
+              >
+                <Text style={styles.modalCancelText}>{t('cancel')}</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.modalSaveBtn}
+                onPress={handleSaveProfile}
+                disabled={savingProfile}
+              >
+                {savingProfile ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Text style={styles.modalSaveText}>{t('save')}</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -334,10 +451,20 @@ const styles = StyleSheet.create({
   userInfo: {
     flex: 1,
   },
+  nameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
   userName: {
     fontSize: typography.fontSizes.lg,
     fontWeight: typography.fontWeights.heavy,
     color: colors.textPrimary,
+  },
+  editPencilBtn: {
+    padding: 4,
+    borderRadius: 8,
+    backgroundColor: colors.surfaceMuted,
   },
   userPhone: {
     fontSize: typography.fontSizes.xs,
@@ -348,84 +475,122 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    marginTop: spacing.xs,
+    marginTop: 4,
   },
   ratingText: {
     fontSize: typography.fontSizes.xs,
-    fontWeight: typography.fontWeights.bold,
+    fontWeight: typography.fontWeights.semibold,
     color: colors.textPrimary,
   },
   verifiedChip: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 3,
-    backgroundColor: '#ECFDF5',
-    paddingHorizontal: 6,
+    paddingHorizontal: 7,
     paddingVertical: 2,
     borderRadius: borderRadius.pill,
-    marginLeft: 4,
+    marginLeft: 6,
+  },
+  verifiedChipGreen: {
+    backgroundColor: '#ECFDF5',
+  },
+  verifiedChipOrange: {
+    backgroundColor: '#FEF3C7',
   },
   verifiedChipText: {
     fontSize: 10,
     fontWeight: typography.fontWeights.bold,
-    color: '#059669',
   },
-  langActiveBadge: {
-    fontSize: 12,
+
+  /* Cards */
+  card: {
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.xl,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    ...shadows.sm,
+  },
+  cardHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.xs,
+  },
+  cardTitle: {
+    fontSize: typography.fontSizes.sm,
     fontWeight: typography.fontWeights.heavy,
-    color: colors.primary,
-    backgroundColor: colors.accentSoft,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: borderRadius.sm,
+    color: colors.textPrimary,
+    letterSpacing: 0.2,
   },
+  editLink: {
+    fontSize: typography.fontSizes.xs,
+    fontWeight: typography.fontWeights.bold,
+    color: colors.primary,
+  },
+
+  /* Language Selector */
   langSubtitle: {
     fontSize: typography.fontSizes.xs,
     color: colors.textSecondary,
     marginBottom: spacing.sm,
   },
+  langActiveBadge: {
+    fontSize: 11,
+    fontWeight: typography.fontWeights.bold,
+    color: colors.primary,
+    backgroundColor: colors.surfaceMuted,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: borderRadius.pill,
+  },
   langGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
+    gap: spacing.xs,
   },
   langChip: {
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: borderRadius.lg,
+    width: '23%',
+    paddingVertical: spacing.xs,
+    paddingHorizontal: 4,
+    borderRadius: borderRadius.md,
     backgroundColor: colors.surfaceMuted,
     borderWidth: 1,
     borderColor: colors.border,
     alignItems: 'center',
-    minWidth: '22%',
+    justifyContent: 'center',
   },
   langChipActive: {
     backgroundColor: colors.primary,
     borderColor: colors.primary,
   },
   langNativeText: {
-    fontSize: 12,
+    fontSize: typography.fontSizes.xs,
     fontWeight: typography.fontWeights.bold,
     color: colors.textPrimary,
   },
   langNativeTextActive: {
-    color: colors.accent,
+    color: '#FFFFFF',
   },
   langEnglishText: {
-    fontSize: 10,
+    fontSize: 9,
     color: colors.textSecondary,
     marginTop: 1,
   },
   langEnglishTextActive: {
-    color: '#CBD5E1',
+    color: 'rgba(255,255,255,0.85)',
   },
 
   /* Wallet */
   walletCard: {
-    backgroundColor: '#101828',
+    backgroundColor: colors.surfaceMuted,
     borderRadius: borderRadius.xl,
-    padding: spacing.lg,
+    padding: spacing.md,
     marginBottom: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    ...shadows.sm,
   },
   walletRow: {
     flexDirection: 'row',
@@ -435,132 +600,105 @@ const styles = StyleSheet.create({
   },
   walletLabel: {
     fontSize: 10,
-    fontWeight: typography.fontWeights.bold,
+    fontWeight: typography.fontWeights.heavy,
+    color: colors.textSecondary,
     letterSpacing: 1,
-    color: '#94A3B8',
   },
   walletAmount: {
     fontSize: typography.fontSizes.xxl,
     fontWeight: typography.fontWeights.heavy,
-    color: '#FFFFFF',
-    marginTop: 2,
+    color: colors.textPrimary,
   },
   topUpBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
     backgroundColor: colors.accent,
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
+    paddingVertical: spacing.xs,
     borderRadius: borderRadius.pill,
+    gap: 4,
   },
   topUpBtnText: {
+    color: colors.accentText,
     fontSize: typography.fontSizes.xs,
     fontWeight: typography.fontWeights.bold,
-    color: colors.accentText,
   },
   statsRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-around',
+    paddingTop: spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
   },
   statItem: {
-    flex: 1,
     alignItems: 'center',
+    gap: 2,
   },
   statValue: {
-    fontSize: typography.fontSizes.sm,
-    fontWeight: typography.fontWeights.heavy,
-    color: '#FFFFFF',
-    marginTop: 2,
+    fontSize: typography.fontSizes.xs,
+    fontWeight: typography.fontWeights.bold,
+    color: colors.textPrimary,
   },
   statLabel: {
-    fontSize: 9,
-    color: '#94A3B8',
-    marginTop: 1,
+    fontSize: 10,
+    color: colors.textSecondary,
   },
   statDivider: {
     width: 1,
     height: 24,
-    backgroundColor: '#334155',
-  },
-
-  /* Generic Card */
-  card: {
-    backgroundColor: colors.surface,
-    borderRadius: borderRadius.xl,
-    padding: spacing.lg,
-    marginBottom: spacing.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    ...shadows.sm,
-  },
-  cardTitle: {
-    fontSize: typography.fontSizes.sm,
-    fontWeight: typography.fontWeights.bold,
-    color: colors.textPrimary,
-    marginBottom: spacing.md,
-  },
-  cardHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: spacing.md,
-  },
-  editLink: {
-    fontSize: typography.fontSizes.xs,
-    fontWeight: typography.fontWeights.bold,
-    color: '#0284C7',
+    backgroundColor: colors.border,
   },
 
   /* Chattiness */
   chattinessRow: {
     flexDirection: 'row',
     gap: spacing.xs,
+    marginTop: spacing.xs,
   },
   chattinessBtn: {
     flex: 1,
-    backgroundColor: colors.surfaceMuted,
-    borderRadius: borderRadius.lg,
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.xs,
+    borderRadius: borderRadius.md,
     borderWidth: 1,
     borderColor: colors.border,
+    backgroundColor: colors.surfaceMuted,
     alignItems: 'center',
   },
   chattinessBtnActive: {
-    backgroundColor: colors.accentSoft,
     borderColor: colors.primary,
+    backgroundColor: '#EEF2FF',
   },
   chattinessBtnTitle: {
-    fontSize: typography.fontSizes.sm,
+    fontSize: typography.fontSizes.xs,
     fontWeight: typography.fontWeights.heavy,
-    color: colors.textSecondary,
+    color: colors.textPrimary,
   },
   chattinessBtnTitleActive: {
     color: colors.primary,
   },
   chattinessBtnDesc: {
-    fontSize: 9,
-    color: colors.textTertiary,
-    textAlign: 'center',
-    marginTop: 1,
+    fontSize: 10,
+    color: colors.textSecondary,
+    marginTop: 2,
   },
 
   /* Verification */
   verifRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: spacing.sm,
+    paddingVertical: spacing.xs + 2,
     borderBottomWidth: 1,
     borderBottomColor: colors.surfaceMuted,
   },
   verifTitle: {
-    fontSize: typography.fontSizes.sm,
+    fontSize: typography.fontSizes.xs,
     fontWeight: typography.fontWeights.semibold,
     color: colors.textPrimary,
   },
   verifSub: {
-    fontSize: typography.fontSizes.xs,
+    fontSize: 11,
     color: colors.textSecondary,
     marginTop: 1,
   },
@@ -569,11 +707,12 @@ const styles = StyleSheet.create({
   vehicleRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    paddingVertical: spacing.xs,
   },
   vehicleIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 42,
+    height: 42,
+    borderRadius: borderRadius.md,
     backgroundColor: colors.surfaceMuted,
     alignItems: 'center',
     justifyContent: 'center',
@@ -587,19 +726,7 @@ const styles = StyleSheet.create({
   vehicleDetail: {
     fontSize: typography.fontSizes.xs,
     color: colors.textSecondary,
-    marginTop: 1,
-  },
-
-  /* Preferences */
-  prefRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    paddingVertical: spacing.xs,
-  },
-  prefText: {
-    fontSize: typography.fontSizes.sm,
-    color: colors.textPrimary,
+    marginTop: 2,
   },
 
   /* Logout */
@@ -607,17 +734,92 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: spacing.xs,
-    height: 48,
-    borderRadius: borderRadius.pill,
+    paddingVertical: spacing.sm + 2,
+    borderRadius: borderRadius.lg,
     borderWidth: 1,
-    borderColor: '#FCA5A5',
+    borderColor: '#FEE2E2',
     backgroundColor: '#FEF2F2',
+    gap: spacing.xs,
     marginTop: spacing.sm,
   },
   logoutBtnText: {
     fontSize: typography.fontSizes.sm,
     fontWeight: typography.fontWeights.bold,
     color: '#EF4444',
+  },
+
+  /* Modal */
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: spacing.lg,
+  },
+  modalContent: {
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.xxl,
+    padding: spacing.xl,
+    width: '100%',
+    maxWidth: 400,
+    ...shadows.lg,
+  },
+  modalHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.md,
+  },
+  modalTitle: {
+    fontSize: typography.fontSizes.md,
+    fontWeight: typography.fontWeights.heavy,
+    color: colors.textPrimary,
+  },
+  inputLabel: {
+    fontSize: typography.fontSizes.xs,
+    fontWeight: typography.fontWeights.bold,
+    color: colors.textPrimary,
+    marginTop: spacing.sm,
+    marginBottom: 4,
+  },
+  modalInput: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: borderRadius.md,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.sm,
+    fontSize: typography.fontSizes.sm,
+    color: colors.textPrimary,
+    backgroundColor: colors.surfaceMuted,
+  },
+  modalBtnRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginTop: spacing.lg,
+  },
+  modalCancelBtn: {
+    flex: 1,
+    paddingVertical: spacing.sm,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+  },
+  modalCancelText: {
+    fontSize: typography.fontSizes.sm,
+    fontWeight: typography.fontWeights.semibold,
+    color: colors.textSecondary,
+  },
+  modalSaveBtn: {
+    flex: 1,
+    paddingVertical: spacing.sm,
+    borderRadius: borderRadius.md,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+  },
+  modalSaveText: {
+    fontSize: typography.fontSizes.sm,
+    fontWeight: typography.fontWeights.bold,
+    color: '#FFFFFF',
   },
 });

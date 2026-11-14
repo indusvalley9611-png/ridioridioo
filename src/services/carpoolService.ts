@@ -6,6 +6,7 @@
  */
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { kycService } from '@/services/kycService';
 import type {
   CarpoolRide,
   CarpoolTicket,
@@ -509,6 +510,8 @@ export class CarpoolService {
   /** Publish a new carpool ride as a driver */
   static async publishRide(input: PublishRideInput): Promise<CarpoolRide> {
     const all = await this.getAllRides();
+    const user = await kycService.getUserProfile();
+    const driverName = user.fullName && user.fullName !== 'NEXORA Rider' ? `${user.fullName} (Host)` : 'Host (You)';
 
     const price = input.pricePerSeat;
     const fuelShare = Math.round(price * 0.78);
@@ -518,8 +521,8 @@ export class CarpoolService {
     const newRide: CarpoolRide = {
       id: `cpr-${Date.now().toString().slice(-6)}`,
       driver: {
-        id: 'usr-demo-driver',
-        name: 'Gokul (You)',
+        id: 'usr-driver-host',
+        name: driverName,
         rating: 5.0,
         reviewCount: 1,
         tripsCompleted: 1,

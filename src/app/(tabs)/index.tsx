@@ -29,12 +29,14 @@ import { SafetyModal } from '@/components/safety/SafetyModal';
 import { triggerHaptic } from '@/utils/haptics';
 import { CarpoolService } from '@/services/carpoolService';
 import { RealGeocodingProvider } from '@/services/geocoding';
+import { useTrip } from '@/context/TripContext';
 import type { CarpoolRide } from '@/models/carpool';
 
 const geocoder = new RealGeocodingProvider();
 
 export default function HomeScreen() {
   const router = useRouter();
+  const { trip, setPickup, setDestination } = useTrip();
 
   // Carpool search state — all empty by default
   const [originCity, setOriginCity] = useState('');
@@ -48,6 +50,21 @@ export default function HomeScreen() {
   // Map coordinates for route preview
   const [mapPickup, setMapPickup] = useState<{ latitude: number; longitude: number } | null>(null);
   const [mapDest, setMapDest] = useState<{ latitude: number; longitude: number } | null>(null);
+
+  // Sync TripContext selections from Rapido Location Search
+  useEffect(() => {
+    if (trip.pickup) {
+      setOriginCity(trip.pickup.name);
+      setMapPickup(trip.pickup.coordinates);
+    }
+  }, [trip.pickup]);
+
+  useEffect(() => {
+    if (trip.destination) {
+      setDestinationCity(trip.destination.name);
+      setMapDest(trip.destination.coordinates);
+    }
+  }, [trip.destination]);
 
   // Fetch real published rides from Supabase
   useEffect(() => {
@@ -165,7 +182,11 @@ export default function HomeScreen() {
         {/* Search Card */}
         <View style={styles.searchCard}>
           {/* From */}
-          <View style={styles.searchRow}>
+          <TouchableOpacity
+            style={styles.searchRow}
+            onPress={() => router.push('/location-search?mode=pickup' as any)}
+            activeOpacity={0.85}
+          >
             <View style={styles.originDot} />
             <TextInput
               style={styles.searchInput}
@@ -173,18 +194,30 @@ export default function HomeScreen() {
               onChangeText={setOriginCity}
               placeholder="Leaving from"
               placeholderTextColor={colors.textTertiary}
+              onFocus={() => router.push('/location-search?mode=pickup' as any)}
             />
             {originCity.length > 0 && (
-              <TouchableOpacity onPress={() => setOriginCity('')} hitSlop={8}>
+              <TouchableOpacity
+                onPress={() => {
+                  setOriginCity('');
+                  setPickup(null);
+                  setMapPickup(null);
+                }}
+                hitSlop={8}
+              >
                 <Ionicons name="close-circle" size={18} color={colors.textTertiary} />
               </TouchableOpacity>
             )}
-          </View>
+          </TouchableOpacity>
 
           <View style={styles.searchDivider} />
 
           {/* To */}
-          <View style={styles.searchRow}>
+          <TouchableOpacity
+            style={styles.searchRow}
+            onPress={() => router.push('/location-search?mode=destination' as any)}
+            activeOpacity={0.85}
+          >
             <View style={styles.destDot} />
             <TextInput
               style={styles.searchInput}
@@ -192,13 +225,21 @@ export default function HomeScreen() {
               onChangeText={setDestinationCity}
               placeholder="Going to"
               placeholderTextColor={colors.textTertiary}
+              onFocus={() => router.push('/location-search?mode=destination' as any)}
             />
             {destinationCity.length > 0 && (
-              <TouchableOpacity onPress={() => setDestinationCity('')} hitSlop={8}>
+              <TouchableOpacity
+                onPress={() => {
+                  setDestinationCity('');
+                  setDestination(null);
+                  setMapDest(null);
+                }}
+                hitSlop={8}
+              >
                 <Ionicons name="close-circle" size={18} color={colors.textTertiary} />
               </TouchableOpacity>
             )}
-          </View>
+          </TouchableOpacity>
 
           <View style={styles.searchDivider} />
 

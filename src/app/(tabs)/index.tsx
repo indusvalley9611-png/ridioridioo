@@ -1,14 +1,17 @@
 /**
- * NEXORA RIDE — Home Screen
+ * NEXORA RIDE — Home Screen (Rapido Modern Mobile Interface)
  *
- * Pure intercity carpooling hub. NO commercial ride modes (Bike/Auto/Cab).
- * - Search for published carpool rides between Indian cities
- * - Interactive India map showing route preview
- * - Publish your own ride banner
- * - Safety trust bar
+ * Designed to match Rapido's clean, modern layout (Picture 2):
+ * - Top Rapido header with "For me ▾" and 24x7 Safety badge
+ * - "Uh oh, we can't find you!" contextual alert banner
+ * - Dual Route Card: [🟢 Pickup location] and [🟠 Drop location] with connecting line
+ * - 📍 "Map" pill button to toggle interactive Indian map preview
+ * - Previously searched recent locations list with 🕒 clock icon and 🤍 favorite heart
+ * - Instant partial-word autocomplete suggestions as user types ("raja", "pres", "bom", "silk")
+ * - Date, passenger count & Search Rides action
  */
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -17,6 +20,8 @@ import {
   TouchableOpacity,
   TextInput,
   Alert,
+  ActivityIndicator,
+  Keyboard,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -29,54 +34,74 @@ import { SafetyModal } from '@/components/safety/SafetyModal';
 import { triggerHaptic } from '@/utils/haptics';
 import { CarpoolService } from '@/services/carpoolService';
 import { RealGeocodingProvider } from '@/services/geocoding';
+import { getRecentSearches, addRecentSearch } from '@/services/recentSearches';
 import { useTrip } from '@/context/TripContext';
+import type { PlaceSuggestion, RecentSearch, ResolvedLocation } from '@/models/types';
 import type { CarpoolRide } from '@/models/carpool';
 
 const geocoder = new RealGeocodingProvider();
+const DEBOUNCE_MS = 150; // Ultra-fast autocomplete
+
+type FocusedField = 'pickup' | 'destination' | null;
 
 export default function HomeScreen() {
   const router = useRouter();
   const { trip, setPickup, setDestination } = useTrip();
 
-  // Carpool search state — all empty by default
-  const [originCity, setOriginCity] = useState('');
-  const [destinationCity, setDestinationCity] = useState('');
+  // Active focused input
+  const [activeField, setActiveField] = useState<FocusedField>('destination');
+
+  // Input text values
+  const [pickupText, setPickupText] = useState(trip.pickup?.name || '');
+  const [dropText, setDropText] = useState(trip.destination?.name || '');
+
+  // Live search query and results
+  const [query, setQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<PlaceSuggestion[]>([]);
+  const [recentList, setRecentList] = useState<RecentSearch[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [favorites, setFavorites] = useState<Set<string>>(new Set());
+
+  // Show/hide Map preview
+  const [showMap, setShowMap] = useState(false);
+
+  // Filters & Schedule
   const [passengers, setPassengers] = useState(1);
   const [dateSelection, setDateSelection] = useState<'today' | 'tomorrow'>('today');
   const [selectedFilter, setSelectedFilter] = useState<'all' | 'ladies' | 'instant' | 'max2'>('all');
   const [isSafetyVisible, setIsSafetyVisible] = useState(false);
   const [activeRides, setActiveRides] = useState<CarpoolRide[]>([]);
 
-  // Map coordinates for route preview
-  const [mapPickup, setMapPickup] = useState<{ latitude: number; longitude: number } | null>(null);
-  const [mapDest, setMapDest] = useState<{ latitude: number; longitude: number } | null>(null);
+  // Input refs
+  const pickupInputRef = useRef<any>(null);
+  const dropInputRef = useRef<any>(null);
+  const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const searchSeqRef = useRef(0);
 
-  // Sync TripContext selections from Rapido Location Search
+  // Sync TripContext changes
   useEffect(() => {
     if (trip.pickup) {
-      setOriginCity(trip.pickup.name);
-      setMapPickup(trip.pickup.coordinates);
+      setPickupText(trip.pickup.name);
     }
-  }, [trip.pickup]);
-
-  useEffect(() => {
     if (trip.destination) {
-      setDestinationCity(trip.destination.name);
-      setMapDest(trip.destination.coordinates);
+      setDropText(trip.destination.name);
     }
-  }, [trip.destination]);
+  }, [trip.pickup, trip.destination]);
 
-  // Fetch real published rides from Supabase
+  // Load recents on launch
+  useEffect(() => {
+    getRecentSearches().then(setRecentList);
+  }, []);
+
+  // Fetch real published rides
   useEffect(() => {
     let isMounted = true;
     (async () => {
       try {
         const rides = await CarpoolService.getAllRides();
-        if (isMounted) {
-          setActiveRides(rides);
-        }
+        if (isMounted) setActiveRides(rides);
       } catch {
-        // Supabase unavailable — show empty
+        // Fallback
       }
     })();
     return () => {
@@ -84,49 +109,118 @@ export default function HomeScreen() {
     };
   }, []);
 
-  // Geocode origin city for map preview
-  useEffect(() => {
-    if (originCity.trim().length < 3) {
-      setMapPickup(null);
-      return;
-    }
-    const timeout = setTimeout(async () => {
-      try {
-        const results = await geocoder.searchPlaces(originCity.trim());
-        if (results.length > 0 && results[0].coordinates) {
-          setMapPickup(results[0].coordinates);
-        }
-      } catch {
-        // Silently fail
-      }
-    }, 600);
-    return () => clearTimeout(timeout);
-  }, [originCity]);
+  // Debounced search when query changes
+  const handleQuerySearch = useCallback((text: string) => {
+    setQuery(text);
 
-  // Geocode destination city for map preview
-  useEffect(() => {
-    if (destinationCity.trim().length < 3) {
-      setMapDest(null);
+    if (debounceTimer.current) clearTimeout(debounceTimer.current);
+
+    if (!text.trim()) {
+      setSearchResults([]);
+      setIsSearching(false);
       return;
     }
-    const timeout = setTimeout(async () => {
+
+    setIsSearching(true);
+    const seq = ++searchSeqRef.current;
+
+    debounceTimer.current = setTimeout(async () => {
       try {
-        const results = await geocoder.searchPlaces(destinationCity.trim());
-        if (results.length > 0 && results[0].coordinates) {
-          setMapDest(results[0].coordinates);
+        const suggestions = await geocoder.searchPlaces(text);
+        if (seq === searchSeqRef.current) {
+          setSearchResults(suggestions);
         }
       } catch {
-        // Silently fail
+        // Fallback
+      } finally {
+        if (seq === searchSeqRef.current) {
+          setIsSearching(false);
+        }
       }
-    }, 600);
-    return () => clearTimeout(timeout);
-  }, [destinationCity]);
+    }, DEBOUNCE_MS);
+  }, []);
+
+  // Typing handlers
+  const handlePickupChange = (text: string) => {
+    setPickupText(text);
+    setActiveField('pickup');
+    handleQuerySearch(text);
+  };
+
+  const handleDropChange = (text: string) => {
+    setDropText(text);
+    setActiveField('destination');
+    handleQuerySearch(text);
+  };
+
+  // Toggle favorite heart
+  const toggleFavorite = (id: string) => {
+    triggerHaptic.selection();
+    setFavorites((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  // Location item selection
+  const handleSelectLocation = async (item: PlaceSuggestion | ResolvedLocation) => {
+    triggerHaptic.selection();
+    Keyboard.dismiss();
+
+    let resolved: ResolvedLocation | null = null;
+
+    if ('placeId' in item && item.coordinates) {
+      resolved = {
+        placeId: item.placeId,
+        name: item.name,
+        address: item.address,
+        coordinates: item.coordinates,
+        isDemo: false,
+      };
+    } else {
+      resolved = await geocoder.getPlaceDetails((item as any).placeId || '');
+      if (!resolved && 'coordinates' in item && item.coordinates) {
+        resolved = item as ResolvedLocation;
+      }
+    }
+
+    if (!resolved) return;
+
+    await addRecentSearch(resolved);
+    const updated = await getRecentSearches();
+    setRecentList(updated);
+
+    if (activeField === 'pickup') {
+      setPickup(resolved);
+      setPickupText(resolved.name);
+      setQuery('');
+      setSearchResults([]);
+
+      // Auto-switch focus to Drop location if empty
+      if (!dropText.trim()) {
+        setActiveField('destination');
+        setTimeout(() => {
+          dropInputRef.current?.focus?.();
+        }, 150);
+      } else {
+        setShowMap(true);
+      }
+    } else {
+      setDestination(resolved);
+      setDropText(resolved.name);
+      setQuery('');
+      setSearchResults([]);
+      setShowMap(true);
+    }
+  };
 
   const handleSearchCarpools = () => {
-    if (!originCity.trim() || !destinationCity.trim()) {
+    if (!pickupText.trim() || !dropText.trim()) {
       Alert.alert(
         'Enter Route',
-        'Please enter both departure and destination cities to search for available rides.'
+        'Please enter both departure and destination locations to search for rides.'
       );
       return;
     }
@@ -134,22 +228,30 @@ export default function HomeScreen() {
     router.push({
       pathname: '/carpool-results' as any,
       params: {
-        origin: originCity.trim(),
-        destination: destinationCity.trim(),
+        origin: pickupText.trim(),
+        destination: dropText.trim(),
         seats: passengers.toString(),
         filter: selectedFilter !== 'all' ? selectedFilter : undefined,
       },
     });
   };
 
+  const isRouteReady = pickupText.trim().length > 0 && dropText.trim().length > 0;
+
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
       <StatusBar style="dark" />
 
-      {/* ── Header ── */}
-      <View style={styles.header}>
-        <View style={styles.headerRow}>
-          <BrandLogo size="sm" variant="dark" showTagline={false} />
+      {/* ─── Top Rapido-Style Header ─── */}
+      <View style={styles.topHeader}>
+        <BrandLogo size="sm" variant="dark" showTagline={false} />
+
+        <View style={styles.topHeaderRight}>
+          <TouchableOpacity style={styles.forMeDropdown} activeOpacity={0.8}>
+            <Text style={styles.forMeText}>For me</Text>
+            <Ionicons name="chevron-down" size={14} color="#0F172A" />
+          </TouchableOpacity>
+
           <TouchableOpacity
             style={styles.safetyHeaderBtn}
             onPress={() => setIsSafetyVisible(true)}
@@ -164,139 +266,248 @@ export default function HomeScreen() {
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="always"
       >
-        {/* Page Title */}
-        <Text style={styles.pageTitle}>Find a carpool ride</Text>
+        {/* ─── Contextual Alert Banner (Rapido Style) ─── */}
+        {!pickupText.trim() && (
+          <View style={styles.alertBanner}>
+            <View style={styles.alertIconCircle}>
+              <Ionicons name="information-circle" size={18} color="#475569" />
+            </View>
+            <Text style={styles.alertBannerText}>
+              Uh oh, we can't find you! Enter your pickup location for a smooth ride.
+            </Text>
+          </View>
+        )}
 
-        {/* Interactive India Map */}
-        <View style={styles.mapCard}>
-          <SmartMap
-            pickup={mapPickup}
-            destination={mapDest}
-            pickupLabel={originCity || 'Origin'}
-            destinationLabel={destinationCity || 'Destination'}
-            height={200}
-          />
-        </View>
+        {/* ─── Dual Route Card (Rapido Exact Design) ─── */}
+        <View style={styles.routeCard}>
+          {/* Left Side: Route Line Indicator */}
+          <View style={styles.routeIndicatorCol}>
+            <View style={styles.pickupGreenRing}>
+              <View style={styles.pickupGreenDot} />
+            </View>
+            <View style={styles.dottedConnectorLine} />
+            <View style={styles.dropOrangeCircle}>
+              <Ionicons name="arrow-down" size={9} color="#FFFFFF" />
+            </View>
+          </View>
 
-        {/* Search Card */}
-        <View style={styles.searchCard}>
-          {/* From */}
-          <TouchableOpacity
-            style={styles.searchRow}
-            onPress={() => router.push('/location-search?mode=pickup' as any)}
-            activeOpacity={0.85}
-          >
-            <View style={styles.originDot} />
-            <TextInput
-              style={styles.searchInput}
-              value={originCity}
-              onChangeText={setOriginCity}
-              placeholder="Leaving from"
-              placeholderTextColor={colors.textTertiary}
-              onFocus={() => router.push('/location-search?mode=pickup' as any)}
-            />
-            {originCity.length > 0 && (
-              <TouchableOpacity
-                onPress={() => {
-                  setOriginCity('');
-                  setPickup(null);
-                  setMapPickup(null);
+          {/* Right Side: Inputs */}
+          <View style={styles.inputsCol}>
+            {/* Pickup Input */}
+            <View style={[styles.inputRow, activeField === 'pickup' && styles.inputRowFocused]}>
+              <TextInput
+                ref={pickupInputRef}
+                style={styles.textInputField}
+                placeholder="Pickup location"
+                placeholderTextColor="#94A3B8"
+                value={pickupText}
+                onChangeText={handlePickupChange}
+                onFocus={() => {
+                  setActiveField('pickup');
+                  setQuery(pickupText);
                 }}
-                hitSlop={8}
-              >
-                <Ionicons name="close-circle" size={18} color={colors.textTertiary} />
-              </TouchableOpacity>
-            )}
-          </TouchableOpacity>
-
-          <View style={styles.searchDivider} />
-
-          {/* To */}
-          <TouchableOpacity
-            style={styles.searchRow}
-            onPress={() => router.push('/location-search?mode=destination' as any)}
-            activeOpacity={0.85}
-          >
-            <View style={styles.destDot} />
-            <TextInput
-              style={styles.searchInput}
-              value={destinationCity}
-              onChangeText={setDestinationCity}
-              placeholder="Going to"
-              placeholderTextColor={colors.textTertiary}
-              onFocus={() => router.push('/location-search?mode=destination' as any)}
-            />
-            {destinationCity.length > 0 && (
-              <TouchableOpacity
-                onPress={() => {
-                  setDestinationCity('');
-                  setDestination(null);
-                  setMapDest(null);
-                }}
-                hitSlop={8}
-              >
-                <Ionicons name="close-circle" size={18} color={colors.textTertiary} />
-              </TouchableOpacity>
-            )}
-          </TouchableOpacity>
-
-          <View style={styles.searchDivider} />
-
-          {/* Date + Passengers */}
-          <View style={styles.metaRow}>
-            <View style={styles.metaCol}>
-              <Ionicons name="calendar-outline" size={16} color={colors.textSecondary} />
-              <View style={styles.dateToggleRow}>
+                returnKeyType="next"
+                autoCorrect={false}
+              />
+              {pickupText.length > 0 ? (
                 <TouchableOpacity
-                  style={[styles.dateChip, dateSelection === 'today' && styles.dateChipActive]}
-                  onPress={() => setDateSelection('today')}
+                  onPress={() => {
+                    setPickupText('');
+                    setPickup(null);
+                    setQuery('');
+                    setSearchResults([]);
+                  }}
+                  hitSlop={8}
                 >
-                  <Text style={[styles.dateChipText, dateSelection === 'today' && styles.dateChipTextActive]}>
-                    Today
-                  </Text>
+                  <Ionicons name="close-circle" size={18} color="#94A3B8" />
                 </TouchableOpacity>
+              ) : (
                 <TouchableOpacity
-                  style={[styles.dateChip, dateSelection === 'tomorrow' && styles.dateChipActive]}
-                  onPress={() => setDateSelection('tomorrow')}
+                  onPress={() => dropInputRef.current?.focus?.()}
+                  hitSlop={8}
+                  style={styles.plusBtn}
                 >
-                  <Text style={[styles.dateChipText, dateSelection === 'tomorrow' && styles.dateChipTextActive]}>
-                    Tomorrow
-                  </Text>
+                  <Ionicons name="add" size={20} color="#64748B" />
                 </TouchableOpacity>
-              </View>
+              )}
             </View>
 
-            <View style={styles.metaDivider} />
+            {/* Drop Location Input */}
+            <View style={[styles.inputRow, activeField === 'destination' && styles.inputRowFocused]}>
+              <TextInput
+                ref={dropInputRef}
+                style={styles.textInputField}
+                placeholder="Drop location"
+                placeholderTextColor="#94A3B8"
+                value={dropText}
+                onChangeText={handleDropChange}
+                onFocus={() => {
+                  setActiveField('destination');
+                  setQuery(dropText);
+                }}
+                returnKeyType="search"
+                autoCorrect={false}
+              />
+              {dropText.length > 0 && (
+                <TouchableOpacity
+                  onPress={() => {
+                    setDropText('');
+                    setDestination(null);
+                    setQuery('');
+                    setSearchResults([]);
+                  }}
+                  hitSlop={8}
+                >
+                  <Ionicons name="close-circle" size={18} color="#94A3B8" />
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
+        </View>
 
-            <View style={styles.metaCol}>
-              <Ionicons name="person-outline" size={16} color={colors.textSecondary} />
-              <Text style={styles.metaValue}>
-                {passengers}
-              </Text>
+        {/* ─── Map Pill Button (Toggles Map Preview) ─── */}
+        <View style={styles.mapPillContainer}>
+          <TouchableOpacity
+            style={[styles.mapPillBtn, showMap && styles.mapPillBtnActive]}
+            onPress={() => {
+              triggerHaptic.selection();
+              setShowMap((prev) => !prev);
+            }}
+            activeOpacity={0.8}
+          >
+            <Ionicons
+              name="location-sharp"
+              size={14}
+              color={showMap ? '#FFFFFF' : '#0F172A'}
+            />
+            <Text style={[styles.mapPillText, showMap && styles.mapPillTextActive]}>
+              {showMap ? 'Hide Map' : 'Map'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* ─── Interactive Map (When Map pill is active or route selected) ─── */}
+        {showMap && (
+          <View style={styles.mapWrapper}>
+            <SmartMap
+              pickup={trip.pickup?.coordinates}
+              destination={trip.destination?.coordinates}
+              pickupLabel={pickupText || 'Pickup'}
+              destinationLabel={dropText || 'Drop'}
+              height={210}
+            />
+          </View>
+        )}
+
+        {/* ─── Search Loading Indicator ─── */}
+        {isSearching && (
+          <View style={styles.searchingRow}>
+            <ActivityIndicator size="small" color={colors.primary} />
+            <Text style={styles.searchingText}>Searching locations across India...</Text>
+          </View>
+        )}
+
+        {/* ─── Rapido-Style Locations List (Autocompletes & Recents) ─── */}
+        <View style={styles.locationsListContainer}>
+          {(query.trim().length > 0 ? searchResults : recentList).map((item, idx) => {
+            const loc = 'location' in item ? item.location : item;
+            const itemId = loc.placeId || loc.name;
+            const isFav = favorites.has(itemId);
+            const isRecent = 'location' in item || query.trim().length === 0;
+
+            return (
+              <TouchableOpacity
+                key={itemId || `loc-${idx}`}
+                style={styles.locationListItem}
+                onPress={() => handleSelectLocation(loc)}
+                activeOpacity={0.7}
+              >
+                {/* Left Icon: Clock for recents, Pin for live results */}
+                <View style={styles.itemIconCol}>
+                  {isRecent ? (
+                    <Ionicons name="time-outline" size={20} color="#475569" />
+                  ) : (
+                    <Ionicons name="location-outline" size={20} color={colors.primary} />
+                  )}
+                </View>
+
+                {/* Title & Subtitle */}
+                <View style={styles.itemTextCol}>
+                  <Text style={styles.itemTitle} numberOfLines={1}>
+                    {loc.name}
+                  </Text>
+                  <Text style={styles.itemSubtitle} numberOfLines={1}>
+                    {loc.address}
+                  </Text>
+                </View>
+
+                {/* Right Favorite Heart Icon */}
+                <TouchableOpacity
+                  style={styles.heartBtn}
+                  onPress={() => toggleFavorite(itemId)}
+                  hitSlop={8}
+                >
+                  <Ionicons
+                    name={isFav ? 'heart' : 'heart-outline'}
+                    size={20}
+                    color={isFav ? '#E11D48' : '#94A3B8'}
+                  />
+                </TouchableOpacity>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
+        {/* ─── Route Options & Search Button (When Route is Chosen) ─── */}
+        <View style={styles.bookingControlsCard}>
+          {/* Date & Passenger row */}
+          <View style={styles.metaRow}>
+            <View style={styles.dateToggleRow}>
+              <TouchableOpacity
+                style={[styles.dateChip, dateSelection === 'today' && styles.dateChipActive]}
+                onPress={() => setDateSelection('today')}
+              >
+                <Text style={[styles.dateChipText, dateSelection === 'today' && styles.dateChipTextActive]}>
+                  Today
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.dateChip, dateSelection === 'tomorrow' && styles.dateChipActive]}
+                onPress={() => setDateSelection('tomorrow')}
+              >
+                <Text style={[styles.dateChipText, dateSelection === 'tomorrow' && styles.dateChipTextActive]}>
+                  Tomorrow
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.passengerCounter}>
+              <Ionicons name="person-outline" size={15} color={colors.textSecondary} />
+              <Text style={styles.passengerValue}>{passengers} Seat</Text>
               <View style={styles.counterBtns}>
                 <TouchableOpacity
                   onPress={() => setPassengers((p) => Math.max(1, p - 1))}
                   style={styles.counterBtn}
                 >
-                  <Ionicons name="remove" size={14} color={colors.textPrimary} />
+                  <Ionicons name="remove" size={13} color="#0F172A" />
                 </TouchableOpacity>
                 <TouchableOpacity
                   onPress={() => setPassengers((p) => Math.min(4, p + 1))}
                   style={styles.counterBtn}
                 >
-                  <Ionicons name="add" size={14} color={colors.textPrimary} />
+                  <Ionicons name="add" size={13} color="#0F172A" />
                 </TouchableOpacity>
               </View>
             </View>
           </View>
 
-          {/* Quick Ride Preferences */}
+          {/* Quick Filter Chips */}
           <View style={styles.preferenceRow}>
             <TouchableOpacity
               style={[styles.prefChip, selectedFilter === 'ladies' && styles.prefChipLadiesActive]}
               onPress={() => setSelectedFilter((prev) => (prev === 'ladies' ? 'all' : 'ladies'))}
-              activeOpacity={0.8}
             >
               <Ionicons
                 name="heart"
@@ -311,7 +522,6 @@ export default function HomeScreen() {
             <TouchableOpacity
               style={[styles.prefChip, selectedFilter === 'instant' && styles.prefChipInstantActive]}
               onPress={() => setSelectedFilter((prev) => (prev === 'instant' ? 'all' : 'instant'))}
-              activeOpacity={0.8}
             >
               <Ionicons
                 name="flash"
@@ -326,7 +536,6 @@ export default function HomeScreen() {
             <TouchableOpacity
               style={[styles.prefChip, selectedFilter === 'max2' && styles.prefChipMax2Active]}
               onPress={() => setSelectedFilter((prev) => (prev === 'max2' ? 'all' : 'max2'))}
-              activeOpacity={0.8}
             >
               <Ionicons
                 name="people"
@@ -341,49 +550,27 @@ export default function HomeScreen() {
 
           {/* Search Button */}
           <TouchableOpacity
-            style={styles.searchBtn}
+            style={[styles.searchBtn, !isRouteReady && styles.searchBtnDisabled]}
             onPress={handleSearchCarpools}
             activeOpacity={0.88}
           >
-            <Ionicons name="search" size={18} color={colors.accentText} />
+            <Ionicons name="search" size={18} color="#FFFFFF" />
             <Text style={styles.searchBtnText}>Search Rides</Text>
           </TouchableOpacity>
         </View>
 
-        {/* Safety & Cost-Sharing Trust Bar */}
-        <TouchableOpacity
-          style={styles.trustStrip}
-          onPress={() => setIsSafetyVisible(true)}
-          activeOpacity={0.8}
-        >
-          <View style={styles.trustItem}>
-            <Ionicons name="shield-checkmark" size={13} color="#059669" />
-            <Text style={styles.trustItemText}>ID Verified</Text>
-          </View>
-          <View style={styles.trustDot} />
-          <View style={styles.trustItem}>
-            <Ionicons name="cash-outline" size={13} color="#0284C7" />
-            <Text style={styles.trustItemText}>Regulated Cost Sharing</Text>
-          </View>
-          <View style={styles.trustDot} />
-          <View style={styles.trustItem}>
-            <Ionicons name="chatbubbles-outline" size={13} color="#D97706" />
-            <Text style={styles.trustItemText}>Passenger Rating</Text>
-          </View>
-        </TouchableOpacity>
-
-        {/* Real Published Rides (Only if someone actually published) */}
+        {/* Recently Published Rides (Real Supabase Rides) */}
         {activeRides.length > 0 && (
-          <>
-            <Text style={styles.sectionTitle}>Recently Published Rides</Text>
+          <View style={styles.publishedRidesSection}>
+            <Text style={styles.sectionTitle}>Recently Published Carpools</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.popularScroll}>
               {activeRides.map((ride) => (
                 <TouchableOpacity
                   key={ride.id}
                   style={styles.routeChip}
                   onPress={() => {
-                    setOriginCity(ride.origin.city);
-                    setDestinationCity(ride.destination.city);
+                    setPickupText(ride.origin.city);
+                    setDropText(ride.destination.city);
                     router.push({
                       pathname: '/carpool-detail' as any,
                       params: { rideId: ride.id, seats: '1' },
@@ -401,10 +588,10 @@ export default function HomeScreen() {
                 </TouchableOpacity>
               ))}
             </ScrollView>
-          </>
+          </View>
         )}
 
-        {/* Publish a Ride — compact banner */}
+        {/* Publish a Ride Callout */}
         <TouchableOpacity
           style={styles.publishBanner}
           onPress={() => router.push('/(tabs)/publish' as any)}
@@ -415,12 +602,12 @@ export default function HomeScreen() {
           </View>
           <View style={{ flex: 1 }}>
             <Text style={styles.publishTitle}>Driving somewhere?</Text>
-            <Text style={styles.publishSub}>
-              Share your ride, split fuel costs.
-            </Text>
+            <Text style={styles.publishSub}>Share empty seats, split fuel costs.</Text>
           </View>
           <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
         </TouchableOpacity>
+
+        <View style={{ height: 40 }} />
       </ScrollView>
 
       {/* Safety Hub Modal */}
@@ -432,26 +619,43 @@ export default function HomeScreen() {
   );
 }
 
-/* ─── STYLES ─── */
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: '#FFFFFF',
   },
 
-  /* Header */
-  header: {
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.xs,
-    paddingBottom: spacing.sm,
-    backgroundColor: colors.surface,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  headerRow: {
+  /* Top Rapido Header */
+  topHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+  },
+  topHeaderRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  forMeDropdown: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: borderRadius.pill,
+    backgroundColor: '#FFFFFF',
+  },
+  forMeText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0F172A',
   },
   safetyHeaderBtn: {
     flexDirection: 'row',
@@ -464,138 +668,281 @@ const styles = StyleSheet.create({
   },
   safetyHeaderBtnText: {
     fontSize: 11,
-    fontWeight: typography.fontWeights.bold,
+    fontWeight: '700',
     color: '#059669',
   },
 
-  /* Scroll */
   scrollContent: {
-    padding: spacing.lg,
     paddingBottom: spacing.huge,
   },
 
-  /* Page Title */
-  pageTitle: {
-    fontSize: typography.fontSizes.xl,
-    fontWeight: typography.fontWeights.heavy,
-    color: colors.textPrimary,
-    marginBottom: spacing.md,
-    marginTop: spacing.xs,
-  },
-
-  /* Map */
-  mapCard: {
-    borderRadius: borderRadius.xl,
-    overflow: 'hidden',
-    marginBottom: spacing.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    ...shadows.sm,
-  },
-
-  /* Search Card */
-  searchCard: {
-    backgroundColor: colors.surface,
-    borderRadius: borderRadius.xl,
-    padding: spacing.lg,
-    borderWidth: 1,
-    borderColor: colors.border,
-    ...shadows.sm,
-  },
-  searchRow: {
+  /* Alert Banner (Rapido Style) */
+  alertBanner: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: spacing.sm,
-    gap: spacing.md,
+    backgroundColor: '#FFF1F2',
+    marginHorizontal: spacing.lg,
+    marginTop: spacing.md,
+    marginBottom: spacing.xs,
+    padding: spacing.md,
+    borderRadius: borderRadius.lg,
+    gap: spacing.sm,
   },
-  originDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
+  alertIconCircle: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#FFE4E6',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  alertBannerText: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#334155',
+    lineHeight: 16,
+  },
+
+  /* Dual Route Card (Rapido Exact Design) */
+  routeCard: {
+    flexDirection: 'row',
+    marginHorizontal: spacing.lg,
+    marginTop: spacing.sm,
+    backgroundColor: '#FFFFFF',
+  },
+  routeIndicatorCol: {
+    width: 24,
+    alignItems: 'center',
+    paddingTop: 14,
+    marginRight: 10,
+  },
+  pickupGreenRing: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
     borderWidth: 2,
-    borderColor: '#0284C7',
-    backgroundColor: colors.surface,
+    borderColor: '#10B981',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
   },
-  destDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
+  pickupGreenDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#10B981',
+  },
+  dottedConnectorLine: {
+    width: 1.5,
+    height: 38,
+    borderStyle: 'dashed',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    marginVertical: 4,
+  },
+  dropOrangeCircle: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: '#F97316',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  /* Inputs Column */
+  inputsCol: {
+    flex: 1,
+    gap: 8,
+  },
+  inputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    borderRadius: borderRadius.md,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  inputRowFocused: {
+    borderColor: '#0284C7',
+    backgroundColor: '#FFFFFF',
+  },
+  textInputField: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#0F172A',
+    padding: 0,
+  },
+  plusBtn: {
+    padding: 2,
+  },
+
+  /* Map Pill Button */
+  mapPillContainer: {
+    paddingHorizontal: spacing.lg,
+    marginTop: 8,
+    marginBottom: spacing.xs,
+  },
+  mapPillBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: 6,
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: borderRadius.pill,
+  },
+  mapPillBtnActive: {
     backgroundColor: colors.primary,
   },
-  searchInput: {
-    flex: 1,
-    fontSize: typography.fontSizes.base,
-    fontWeight: typography.fontWeights.semibold,
-    color: colors.textPrimary,
-    paddingVertical: 2,
+  mapPillText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0F172A',
   },
-  searchDivider: {
-    height: 1,
-    backgroundColor: colors.surfaceMuted,
-    marginLeft: 26,
+  mapPillTextActive: {
+    color: '#FFFFFF',
+  },
+
+  /* Map Wrapper */
+  mapWrapper: {
+    marginHorizontal: spacing.lg,
+    marginVertical: spacing.sm,
+    borderRadius: borderRadius.xl,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+
+  /* Searching Indicator */
+  searchingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: 8,
+  },
+  searchingText: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    fontWeight: '500',
+  },
+
+  /* Locations List */
+  locationsListContainer: {
+    marginTop: spacing.xs,
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
+  },
+  locationListItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: 13,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F8FAFC',
+  },
+  itemIconCol: {
+    width: 28,
+    alignItems: 'flex-start',
+  },
+  itemTextCol: {
+    flex: 1,
+    marginRight: 10,
+  },
+  itemTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#0F172A',
+    marginBottom: 2,
+  },
+  itemSubtitle: {
+    fontSize: 12,
+    color: '#64748B',
+    fontWeight: '400',
+  },
+  heartBtn: {
+    padding: 4,
+  },
+
+  /* Booking Controls Card */
+  bookingControlsCard: {
+    marginHorizontal: spacing.lg,
+    marginTop: spacing.md,
+    backgroundColor: '#F8FAFC',
+    borderRadius: borderRadius.xl,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
   },
   metaRow: {
     flexDirection: 'row',
-    borderTopWidth: 1,
-    borderTopColor: colors.surfaceMuted,
-    marginTop: spacing.sm,
-    paddingTop: spacing.sm,
-  },
-  metaCol: {
-    flex: 1,
-    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    gap: spacing.xs,
-  },
-  metaDivider: {
-    width: 1,
-    backgroundColor: colors.surfaceMuted,
-    marginHorizontal: spacing.sm,
   },
   dateToggleRow: {
     flexDirection: 'row',
     gap: 4,
   },
   dateChip: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
     borderRadius: borderRadius.pill,
-    backgroundColor: colors.surfaceMuted,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
   },
   dateChipActive: {
     backgroundColor: colors.primary,
+    borderColor: colors.primary,
   },
   dateChipText: {
-    fontSize: 11,
-    fontWeight: typography.fontWeights.medium,
-    color: colors.textSecondary,
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#64748B',
   },
   dateChipTextActive: {
     color: '#FFFFFF',
-    fontWeight: typography.fontWeights.bold,
+    fontWeight: '700',
   },
-  metaValue: {
-    fontSize: typography.fontSizes.sm,
-    fontWeight: typography.fontWeights.bold,
-    color: colors.textPrimary,
+  passengerCounter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: borderRadius.pill,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  passengerValue: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#0F172A',
   },
   counterBtns: {
     flexDirection: 'row',
-    gap: 4,
-    marginLeft: 'auto',
+    gap: 2,
+    marginLeft: 4,
   },
   counterBtn: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: colors.surfaceMuted,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: '#F1F5F9',
     alignItems: 'center',
     justifyContent: 'center',
   },
+
   preferenceRow: {
     flexDirection: 'row',
-    gap: spacing.xs,
-    marginTop: spacing.md,
+    gap: 6,
+    marginTop: spacing.sm,
   },
   prefChip: {
     flex: 1,
@@ -604,16 +951,15 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 4,
     paddingVertical: 7,
-    paddingHorizontal: 6,
     borderRadius: borderRadius.pill,
-    backgroundColor: colors.surfaceMuted,
+    backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: 'transparent',
+    borderColor: '#E2E8F0',
   },
   prefChipText: {
-    fontSize: 10,
-    fontWeight: typography.fontWeights.semibold,
-    color: colors.textSecondary,
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#64748B',
   },
   prefChipLadiesActive: {
     backgroundColor: '#FCE7F3',
@@ -621,7 +967,7 @@ const styles = StyleSheet.create({
   },
   prefChipLadiesTextActive: {
     color: '#BE185D',
-    fontWeight: typography.fontWeights.bold,
+    fontWeight: '700',
   },
   prefChipInstantActive: {
     backgroundColor: '#ECFDF5',
@@ -629,7 +975,7 @@ const styles = StyleSheet.create({
   },
   prefChipInstantTextActive: {
     color: '#059669',
-    fontWeight: typography.fontWeights.bold,
+    fontWeight: '700',
   },
   prefChipMax2Active: {
     backgroundColor: '#EFF6FF',
@@ -637,77 +983,57 @@ const styles = StyleSheet.create({
   },
   prefChipMax2TextActive: {
     color: '#0284C7',
-    fontWeight: typography.fontWeights.bold,
+    fontWeight: '700',
   },
+
   searchBtn: {
-    backgroundColor: colors.accent,
-    height: 48,
+    backgroundColor: colors.primary,
+    height: 46,
     borderRadius: borderRadius.pill,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: spacing.xs,
     marginTop: spacing.md,
+    ...shadows.sm,
+  },
+  searchBtnDisabled: {
+    opacity: 0.6,
   },
   searchBtnText: {
     fontSize: typography.fontSizes.base,
-    fontWeight: typography.fontWeights.bold,
-    color: colors.accentText,
-  },
-  trustStrip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: colors.surface,
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md,
-    borderRadius: borderRadius.lg,
-    borderWidth: 1,
-    borderColor: colors.border,
-    marginTop: spacing.sm,
-  },
-  trustItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  trustItemText: {
-    fontSize: 10,
-    fontWeight: typography.fontWeights.semibold,
-    color: colors.textSecondary,
-  },
-  trustDot: {
-    width: 3,
-    height: 3,
-    borderRadius: 1.5,
-    backgroundColor: colors.borderStrong,
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
 
-  /* Recently Published Rides */
+  /* Published Rides Section */
+  publishedRidesSection: {
+    marginHorizontal: spacing.lg,
+    marginTop: spacing.lg,
+  },
   sectionTitle: {
-    fontSize: typography.fontSizes.base,
-    fontWeight: typography.fontWeights.bold,
-    color: colors.textPrimary,
-    marginTop: spacing.xl,
-    marginBottom: spacing.sm,
+    fontSize: typography.fontSizes.sm,
+    fontWeight: '700',
+    color: '#0F172A',
+    marginBottom: spacing.xs,
   },
   popularScroll: {
-    marginBottom: spacing.lg,
+    marginBottom: spacing.sm,
   },
   routeChip: {
-    backgroundColor: colors.surface,
+    backgroundColor: '#FFFFFF',
     borderRadius: borderRadius.lg,
     paddingVertical: spacing.md,
     paddingHorizontal: spacing.lg,
     marginRight: spacing.sm,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: '#E2E8F0',
     minWidth: 160,
   },
   routeChipRoute: {
-    fontSize: typography.fontSizes.sm,
-    fontWeight: typography.fontWeights.bold,
-    color: colors.textPrimary,
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0F172A',
     marginBottom: 4,
   },
   routeChipBottom: {
@@ -716,43 +1042,44 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   routeChipPrice: {
-    fontSize: typography.fontSizes.sm,
-    fontWeight: typography.fontWeights.heavy,
+    fontSize: 13,
+    fontWeight: '800',
     color: colors.primary,
   },
   routeChipTime: {
-    fontSize: typography.fontSizes.xs,
-    color: colors.textSecondary,
+    fontSize: 11,
+    color: '#64748B',
   },
 
   /* Publish Banner */
   publishBanner: {
-    backgroundColor: colors.surface,
+    marginHorizontal: spacing.lg,
+    marginTop: spacing.md,
+    backgroundColor: '#FFFFFF',
     borderRadius: borderRadius.xl,
-    padding: spacing.lg,
+    padding: spacing.md,
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,
     borderWidth: 1,
-    borderColor: colors.border,
-    marginTop: spacing.md,
+    borderColor: '#E2E8F0',
   },
   publishIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: colors.accentSoft,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#EEF2FF',
     alignItems: 'center',
     justifyContent: 'center',
   },
   publishTitle: {
-    fontSize: typography.fontSizes.sm,
-    fontWeight: typography.fontWeights.bold,
-    color: colors.textPrimary,
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0F172A',
   },
   publishSub: {
-    fontSize: typography.fontSizes.xs,
-    color: colors.textSecondary,
+    fontSize: 11,
+    color: '#64748B',
     marginTop: 1,
   },
 });

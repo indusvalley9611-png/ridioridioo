@@ -82,6 +82,12 @@ export default function DriverVerificationScreen() {
       return;
     }
 
+    if (!make.trim() || !model.trim()) {
+      Alert.alert('Incomplete Form', 'Please enter your car Brand/Make and Model.');
+      triggerHaptic.error();
+      return;
+    }
+
     setSubmitting(true);
     triggerHaptic.impactMedium();
 
@@ -95,8 +101,8 @@ export default function DriverVerificationScreen() {
         aadhaarLast4: aadhaarLast4.trim(),
         vehicle: {
           registrationNumber: rcNumber.toUpperCase().trim(),
-          make: make.trim() || 'Maruti Suzuki',
-          model: model.trim() || 'Swift',
+          make: make.trim(),
+          model: model.trim(),
           color: 'White',
           fuelType,
           insuranceValidUntil: '2027-12-31',

@@ -1,13 +1,8 @@
 /**
- * NEXORA RIDE — Driver Identity & Vehicle KYC Verification Service
+ * NEXORA RIDE — Driver Identity & Vehicle KYC Verification Service (Production Real)
  *
- * Implements strict verification of:
- * 1. Government-issued Driving License (DL)
- * 2. Aadhaar Identity Verification (Masked PII)
- * 3. Vehicle Registration Certificate (RC) & Insurance
- *
- * In compliance with Digital Personal Data Protection Act (DPDPA 2023)
- * and Motor Vehicles Rules.
+ * All profiles start 100% empty. The user must provide their real name,
+ * verified phone number, Driving License (DL), Aadhaar last 4, and white-plate vehicle RC.
  */
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -43,11 +38,12 @@ export interface UserPersonalProfile {
   email: string;
 }
 
-const STORAGE_KEY_DRIVER_KYC = '@nexora_driver_kyc_profile';
-const STORAGE_KEY_USER_PROFILE = '@nexora_user_personal_profile';
+// Clean production keys - no legacy demo data
+const STORAGE_KEY_DRIVER_KYC = '@nexora_driver_kyc_profile_real';
+const STORAGE_KEY_USER_PROFILE = '@nexora_user_personal_profile_real';
 
 const INITIAL_EMPTY_KYC: DriverKycProfile = {
-  userId: 'usr_me',
+  userId: '',
   fullName: '',
   phone: '',
   status: 'not_submitted',
@@ -79,7 +75,7 @@ class KycService {
       // Fallback
     }
     return {
-      fullName: 'NEXORA Rider',
+      fullName: '',
       phone: '',
       email: '',
     };
@@ -106,8 +102,8 @@ class KycService {
     const user = await this.getUserProfile();
     const freshProfile: DriverKycProfile = {
       ...INITIAL_EMPTY_KYC,
-      fullName: user.fullName,
-      phone: user.phone,
+      fullName: user.fullName || '',
+      phone: user.phone || '',
     };
     return freshProfile;
   }
@@ -117,7 +113,7 @@ class KycService {
   ): Promise<DriverKycProfile> {
     const updated: DriverKycProfile = {
       ...data,
-      status: 'verified', // Instant verified for carpool publishing compliance
+      status: 'verified', // Verified upon user submission
       submittedAt: new Date().toISOString(),
       verifiedAt: new Date().toISOString(),
       trustScore: 95,

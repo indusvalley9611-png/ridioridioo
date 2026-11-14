@@ -16,6 +16,7 @@ import {
   ScrollView,
   TouchableOpacity,
   TextInput,
+  Alert,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -98,9 +99,9 @@ export default function HomeScreen() {
 
   const [appMode, setAppMode] = useState<'carpool' | 'city'>('carpool');
 
-  // Carpool search state
-  const [originCity, setOriginCity] = useState('Bangalore');
-  const [destinationCity, setDestinationCity] = useState('Chennai');
+  // Carpool search state - empty by default for user input
+  const [originCity, setOriginCity] = useState('');
+  const [destinationCity, setDestinationCity] = useState('');
   const [passengers, setPassengers] = useState(1);
   const [dateSelection, setDateSelection] = useState<'today' | 'tomorrow'>('today');
   const [selectedFilter, setSelectedFilter] = useState<'all' | 'ladies' | 'instant' | 'max2'>('all');
@@ -190,12 +191,19 @@ export default function HomeScreen() {
   );
 
   const handleSearchCarpools = () => {
+    if (!originCity.trim() || !destinationCity.trim()) {
+      Alert.alert(
+        'Enter Route',
+        'Please enter both departure and destination cities to search for available rides.'
+      );
+      return;
+    }
     triggerHaptic.impactMedium();
     router.push({
       pathname: '/carpool-results' as any,
       params: {
-        origin: originCity,
-        destination: destinationCity,
+        origin: originCity.trim(),
+        destination: destinationCity.trim(),
         seats: passengers.toString(),
         filter: selectedFilter !== 'all' ? selectedFilter : undefined,
       },

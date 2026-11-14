@@ -51,17 +51,17 @@ export default function PublishRideScreen() {
   const [destinationSpot, setDestinationSpot] = useState('');
   const [stopoversInput, setStopoversInput] = useState('');
 
-  // Schedule & Pricing
+  // Schedule & Pricing - start 100% empty for user input
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
-  const [departureTime, setDepartureTime] = useState('07:00 AM');
+  const [departureTime, setDepartureTime] = useState('');
   const [seatsAvailable, setSeatsAvailable] = useState(3);
-  const [pricePerSeat, setPricePerSeat] = useState('450');
+  const [pricePerSeat, setPricePerSeat] = useState('');
 
   // Vehicle Details (White-Plate Private Vehicle)
   const [vehicleRegNumber, setVehicleRegNumber] = useState('');
   const [carMake, setCarMake] = useState('');
   const [carModel, setCarModel] = useState('');
-  const [carColor, setCarColor] = useState('White');
+  const [carColor, setCarColor] = useState('');
   const [fuelType, setFuelType] = useState<'petrol' | 'diesel' | 'cng' | 'ev'>('petrol');
 
   // Preferences & Rules
@@ -146,8 +146,13 @@ export default function PublishRideScreen() {
       return;
     }
 
+    if (!departureTime.trim()) {
+      Alert.alert('Time Required', 'Please enter your planned departure time (e.g. 07:00 AM).');
+      return;
+    }
+
     // 4. Validate Pricing
-    if (seatPriceNum < 50) {
+    if (!pricePerSeat.trim() || seatPriceNum < 50) {
       Alert.alert('Price Required', 'Please set a price of at least ₹50 per passenger seat.');
       return;
     }

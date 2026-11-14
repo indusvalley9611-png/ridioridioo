@@ -86,9 +86,14 @@ export default function ChatScreen() {
   };
 
   const handleCall = () => {
-    Linking.openURL('tel:+919876543210').catch(() => {
-      Alert.alert('Driver Phone', 'Call Vikram at +91 98765 43210');
-    });
+    const phone = (ride?.driver as any)?.phone || '';
+    if (phone) {
+      Linking.openURL(`tel:${phone}`).catch(() => {
+        Alert.alert('Host Phone', `Call ${driverName} at ${phone}`);
+      });
+    } else {
+      Alert.alert('Host Phone', 'Host phone contact is shared upon booking confirmation.');
+    }
   };
 
   const driverName = ride?.driver.name || 'Driver';

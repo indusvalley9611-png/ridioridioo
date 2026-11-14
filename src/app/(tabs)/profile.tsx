@@ -112,9 +112,9 @@ export default function ProfileScreen() {
     );
   };
 
-  const displayName = userProfile.fullName || kycProfile?.fullName || 'NEXORA Rider';
-  const displayPhone = userProfile.phone || kycProfile?.phone || 'Add phone number';
-  const initial = displayName.charAt(0).toUpperCase() || 'N';
+  const displayName = userProfile.fullName || kycProfile?.fullName || '';
+  const displayPhone = userProfile.phone || kycProfile?.phone || '';
+  const initial = displayName ? displayName.charAt(0).toUpperCase() : '+';
   const isKycVerified = kycProfile?.status === 'verified';
 
   return (
@@ -126,16 +126,32 @@ export default function ProfileScreen() {
       >
         {/* ── User Card ── */}
         <View style={styles.userCard}>
-          <View style={styles.avatar}>
+          <TouchableOpacity
+            style={styles.avatar}
+            onPress={() => {
+              setEditName(displayName);
+              setEditPhone(displayPhone);
+              setIsEditModalOpen(true);
+            }}
+          >
             <Text style={styles.avatarText}>{initial}</Text>
-          </View>
+          </TouchableOpacity>
           <View style={styles.userInfo}>
             <View style={styles.nameRow}>
-              <Text style={styles.userName}>{displayName}</Text>
+              <Text
+                style={[styles.userName, !displayName && styles.userNamePlaceholder]}
+                onPress={() => {
+                  setEditName(displayName);
+                  setEditPhone(displayPhone);
+                  setIsEditModalOpen(true);
+                }}
+              >
+                {displayName || 'Tap to set your Name'}
+              </Text>
               <TouchableOpacity
                 onPress={() => {
                   setEditName(displayName);
-                  setEditPhone(displayPhone === 'Add phone number' ? '' : displayPhone);
+                  setEditPhone(displayPhone);
                   setIsEditModalOpen(true);
                 }}
                 style={styles.editPencilBtn}
@@ -143,7 +159,16 @@ export default function ProfileScreen() {
                 <Ionicons name="pencil" size={15} color={colors.primary} />
               </TouchableOpacity>
             </View>
-            <Text style={styles.userPhone}>{displayPhone}</Text>
+            <Text
+              style={[styles.userPhone, !displayPhone && styles.userPhonePlaceholder]}
+              onPress={() => {
+                setEditName(displayName);
+                setEditPhone(displayPhone);
+                setIsEditModalOpen(true);
+              }}
+            >
+              {displayPhone || 'Tap to add your phone number'}
+            </Text>
             <View style={styles.ratingRow}>
               <Ionicons name="star" size={13} color="#F59E0B" />
               <Text style={styles.ratingText}>5.0 (0 {t('rides_count')})</Text>
@@ -460,6 +485,14 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSizes.lg,
     fontWeight: typography.fontWeights.heavy,
     color: colors.textPrimary,
+  },
+  userNamePlaceholder: {
+    color: colors.textTertiary,
+    fontStyle: 'italic',
+  },
+  userPhonePlaceholder: {
+    color: colors.primary,
+    fontWeight: typography.fontWeights.semibold,
   },
   editPencilBtn: {
     padding: 4,

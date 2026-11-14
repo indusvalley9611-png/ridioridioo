@@ -61,9 +61,14 @@ export default function CarpoolTicketScreen() {
   }
 
   const handleCallDriver = () => {
-    Linking.openURL('tel:+919876543210').catch(() => {
-      Alert.alert('Call Driver', 'Driver phone: +91 98765 43210');
-    });
+    const phone = (ticket?.ride?.driver as any)?.phone || '';
+    if (phone) {
+      Linking.openURL(`tel:${phone}`).catch(() => {
+        Alert.alert('Call Driver', `Driver phone: ${phone}`);
+      });
+    } else {
+      Alert.alert('Call Driver', 'Driver contact is active via in-app chat.');
+    }
   };
 
   const handleOpenChat = () => {

@@ -139,13 +139,21 @@ export default function LocationSearchScreen() {
     applySelection(recent.location);
   };
 
+  const handleBack = () => {
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace('/(tabs)');
+    }
+  };
+
   const applySelection = (location: ResolvedLocation) => {
     if (mode === 'pickup') {
       setPickup(location);
     } else {
       setDestination(location);
     }
-    router.back();
+    handleBack();
   };
 
   const handleUseCurrentLocation = async () => {
@@ -261,7 +269,7 @@ export default function LocationSearchScreen() {
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity
-          onPress={() => router.back()}
+          onPress={handleBack}
           hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
           style={styles.backButton}
         >

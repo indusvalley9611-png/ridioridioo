@@ -119,13 +119,21 @@ export default function CarpoolResultsScreen() {
     });
   };
 
+  const handleBack = () => {
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace('/(tabs)');
+    }
+  };
+
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
       {/* Top Header */}
       <View style={styles.header}>
         <TouchableOpacity
           style={styles.backBtn}
-          onPress={() => router.back()}
+          onPress={handleBack}
           accessibilityLabel="Go back"
         >
           <Ionicons name="arrow-back" size={22} color={colors.textPrimary} />
@@ -142,7 +150,7 @@ export default function CarpoolResultsScreen() {
 
         <TouchableOpacity
           style={styles.searchEditBtn}
-          onPress={() => router.back()}
+          onPress={handleBack}
           accessibilityLabel="Edit search"
         >
           <Ionicons name="options-outline" size={20} color={colors.textPrimary} />

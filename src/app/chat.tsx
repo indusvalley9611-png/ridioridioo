@@ -99,11 +99,19 @@ export default function ChatScreen() {
   const driverName = ride?.driver.name || 'Driver';
   const carInfo = ride ? `${ride.car.make} ${ride.car.model} • ${ride.car.color}` : 'Car';
 
+  const handleBack = () => {
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace('/(tabs)/rides');
+    }
+  };
+
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
       {/* Top Header */}
       <View style={styles.header}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+        <TouchableOpacity style={styles.backBtn} onPress={handleBack} accessibilityLabel="Back">
           <Ionicons name="arrow-back" size={22} color={colors.textPrimary} />
         </TouchableOpacity>
 

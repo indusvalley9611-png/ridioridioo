@@ -25,7 +25,7 @@ export interface UploadResult {
   error?: string;
 }
 
-export type DocumentType = 'license' | 'rc' | 'aadhaar';
+export type DocumentType = 'license' | 'rc' | 'aadhaar' | 'selfie';
 
 // ---------------------------------------------------------------------------
 // Constants

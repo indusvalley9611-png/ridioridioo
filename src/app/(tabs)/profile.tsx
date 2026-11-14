@@ -280,10 +280,10 @@ export default function ProfileScreen() {
             {
               icon: 'finger-print-outline' as const,
               title: t('aadhaar_identity'),
-              sub: kycProfile?.aadhaarLast4
-                ? `Masked (**** **** ${kycProfile.aadhaarLast4})`
+              sub: kycProfile?.nationalIdMasked || kycProfile?.aadhaarLast4
+                ? `${kycProfile.nationalIdMasked || `Masked (**** **** ${kycProfile.aadhaarLast4})`}`
                 : 'Not Linked (Required for Drivers)',
-              verified: Boolean(kycProfile?.aadhaarLast4),
+              verified: Boolean(kycProfile?.nationalIdMasked || kycProfile?.aadhaarLast4),
             },
             {
               icon: 'call-outline' as const,

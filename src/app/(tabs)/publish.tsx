@@ -171,23 +171,25 @@ export default function PublishRideScreen() {
             city.toLowerCase().includes('coffee') || city.toLowerCase().includes('food'),
         }));
 
-      // A) Save vehicle & driver details to local KYC state
-      await kycService.submitKyc({
-        userId: kycProfile?.userId || `usr_${Date.now()}`,
+      // A) Save vehicle & driver details
+      if (kycProfile) {
+        await kycService.saveProfile({
+          ...kycProfile,
+          fullName: driverName.trim(),
+          phone: driverPhone.trim(),
+          vehicle: {
+            ...kycProfile.vehicle,
+            registrationNumber: vehicleRegNumber.toUpperCase().trim(),
+            make: carMake.trim(),
+            model: carModel.trim(),
+            color: carColor.trim(),
+            fuelType,
+          },
+        });
+      }
+      await kycService.saveUserProfile({
         fullName: driverName.trim(),
         phone: driverPhone.trim(),
-        drivingLicenseNumber: dlNumber.trim() || 'SUBMITTED',
-        drivingLicenseExpiry: '2031-12-31',
-        aadhaarLast4: kycProfile?.aadhaarLast4 || 'XXXX',
-        vehicle: {
-          registrationNumber: vehicleRegNumber.toUpperCase().trim(),
-          make: carMake.trim(),
-          model: carModel.trim(),
-          color: carColor.trim(),
-          fuelType,
-          insuranceValidUntil: '2027-12-31',
-          seatingCapacity: seatsAvailable + 1,
-        },
       });
 
       // B) Publish in CarpoolService

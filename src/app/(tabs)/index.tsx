@@ -34,6 +34,8 @@ import { RealGeocodingProvider } from '@/services/geocoding';
 import { SafetyModal } from '@/components/safety/SafetyModal';
 import { triggerHaptic } from '@/utils/haptics';
 import * as Location from 'expo-location';
+import { CarpoolService } from '@/services/carpoolService';
+import type { CarpoolRide } from '@/models/carpool';
 
 const geocoder = new RealGeocodingProvider();
 
@@ -74,24 +76,15 @@ const SHORTCUTS: LocationShortcut[] = [
   {
     id: 'home',
     title: 'Home',
-    subtitle: 'Koramangala 4th Block',
+    subtitle: 'Add home location',
     icon: 'home',
-    coordinates: { latitude: 12.9352, longitude: 77.6245 },
   },
   {
     id: 'work',
     title: 'Work',
-    subtitle: 'Manyata Tech Park',
+    subtitle: 'Add work location',
     icon: 'briefcase',
-    coordinates: { latitude: 13.0474, longitude: 77.6217 },
   },
-];
-
-const POPULAR_CARPOOLS = [
-  { origin: 'Bangalore', dest: 'Chennai', price: '₹450', time: '4h 30m' },
-  { origin: 'Mumbai', dest: 'Pune', price: '₹290', time: '2h 45m' },
-  { origin: 'Delhi', dest: 'Jaipur', price: '₹550', time: '4h 30m' },
-  { origin: 'Bangalore', dest: 'Mysore', price: '₹220', time: '1h 30m' },
 ];
 
 export default function HomeScreen() {
@@ -106,6 +99,25 @@ export default function HomeScreen() {
   const [dateSelection, setDateSelection] = useState<'today' | 'tomorrow'>('today');
   const [selectedFilter, setSelectedFilter] = useState<'all' | 'ladies' | 'instant' | 'max2'>('all');
   const [isSafetyVisible, setIsSafetyVisible] = useState(false);
+  const [activeRides, setActiveRides] = useState<CarpoolRide[]>([]);
+
+  // Fetch real published rides from Supabase / local storage
+  useEffect(() => {
+    let isMounted = true;
+    (async () => {
+      try {
+        const rides = await CarpoolService.getAllRides();
+        if (isMounted) {
+          setActiveRides(rides);
+        }
+      } catch {
+        // Fallback
+      }
+    })();
+    return () => {
+      isMounted = false;
+    };
+  }, [appMode]);
 
   const {
     trip,
@@ -210,19 +222,6 @@ export default function HomeScreen() {
     });
   };
 
-  const handleSelectPopularRoute = (orig: string, dest: string) => {
-    triggerHaptic.selection();
-    setOriginCity(orig);
-    setDestinationCity(dest);
-    router.push({
-      pathname: '/carpool-results' as any,
-      params: {
-        origin: orig,
-        destination: dest,
-        seats: passengers.toString(),
-      },
-    });
-  };
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
@@ -457,26 +456,37 @@ export default function HomeScreen() {
               </View>
             </TouchableOpacity>
 
-            {/* Popular Routes */}
-            <Text style={styles.sectionTitle}>Popular routes</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.popularScroll}>
-              {POPULAR_CARPOOLS.map((route, i) => (
-                <TouchableOpacity
-                  key={i}
-                  style={styles.routeChip}
-                  onPress={() => handleSelectPopularRoute(route.origin, route.dest)}
-                  activeOpacity={0.8}
-                >
-                  <Text style={styles.routeChipRoute}>
-                    {route.origin} → {route.dest}
-                  </Text>
-                  <View style={styles.routeChipBottom}>
-                    <Text style={styles.routeChipPrice}>{route.price}</Text>
-                    <Text style={styles.routeChipTime}>{route.time}</Text>
-                  </View>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
+            {/* Real Published Rides (Only displays if someone actually published a ride) */}
+            {activeRides.length > 0 ? (
+              <>
+                <Text style={styles.sectionTitle}>Recently Published Rides</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.popularScroll}>
+                  {activeRides.map((ride) => (
+                    <TouchableOpacity
+                      key={ride.id}
+                      style={styles.routeChip}
+                      onPress={() => {
+                        setOriginCity(ride.origin.city);
+                        setDestinationCity(ride.destination.city);
+                        router.push({
+                          pathname: '/carpool-detail' as any,
+                          params: { rideId: ride.id, seats: '1' },
+                        });
+                      }}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={styles.routeChipRoute}>
+                        {ride.origin.city} → {ride.destination.city}
+                      </Text>
+                      <View style={styles.routeChipBottom}>
+                        <Text style={styles.routeChipPrice}>₹{ride.pricePerSeat}</Text>
+                        <Text style={styles.routeChipTime}>{ride.availableSeats} seat(s) left</Text>
+                      </View>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </>
+            ) : null}
 
             {/* Publish a Ride — compact banner */}
             <TouchableOpacity

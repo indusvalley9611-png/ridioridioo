@@ -306,28 +306,56 @@ class KycService {
   }
 
   async getDriverProfile(): Promise<DriverKycProfile> {
-    if (this.cachedProfile) {
-      return this.cachedProfile;
-    }
+    let currentProfile: DriverKycProfile | null = null;
 
     try {
       const stored = await AsyncStorage.getItem(STORAGE_KEY_DRIVER_KYC);
       if (stored) {
-        this.cachedProfile = JSON.parse(stored);
-        return this.cachedProfile!;
+        currentProfile = JSON.parse(stored);
       }
     } catch {
       // Ignore
     }
 
-    const user = await this.getUserProfile();
-    const fresh: DriverKycProfile = {
-      ...INITIAL_EMPTY_KYC,
-      fullName: user.fullName || '',
-      phone: user.phone || '',
-      avatarUrl: user.avatarUrl || '',
-    };
-    return fresh;
+    if (!currentProfile) {
+      const user = await this.getUserProfile();
+      currentProfile = {
+        ...INITIAL_EMPTY_KYC,
+        fullName: user.fullName || '',
+        phone: user.phone || '',
+        avatarUrl: user.avatarUrl || '',
+      };
+    }
+
+    // Live Sync with Supabase: Check if Admin approved the KYC in Supabase database
+    if (isSupabaseConfigured() && currentProfile.userId) {
+      try {
+        const { data, error } = await supabase
+          .from('driver_profiles')
+          .select('verification_status, rating, trips_completed')
+          .eq('user_id', currentProfile.userId)
+          .maybeSingle();
+
+        if (data && data.verification_status) {
+          if (data.verification_status === 'verified') {
+            currentProfile.status = 'verified';
+            currentProfile.trustScore = 100;
+            await this.saveProfile(currentProfile);
+          } else if (data.verification_status === 'rejected') {
+            currentProfile.status = 'rejected';
+            await this.saveProfile(currentProfile);
+          } else if (data.verification_status === 'pending' && currentProfile.status !== 'under_review') {
+            currentProfile.status = 'under_review';
+            await this.saveProfile(currentProfile);
+          }
+        }
+      } catch {
+        // Fallback silently if offline
+      }
+    }
+
+    this.cachedProfile = currentProfile;
+    return currentProfile;
   }
 
   /**

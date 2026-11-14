@@ -75,6 +75,24 @@ export default function PublishRideScreen() {
   const [notes, setNotes] = useState('');
 
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isCheckingStatus, setIsCheckingStatus] = useState(false);
+
+  const handleRefreshKycStatus = async () => {
+    setIsCheckingStatus(true);
+    try {
+      const fresh = await kycService.getDriverProfile();
+      setKycProfile(fresh);
+      if (fresh.status === 'verified') {
+        Alert.alert('🎉 Account Verified!', 'Your driver KYC has been verified and approved by the admin! The publishing studio is now unlocked.');
+      } else if (fresh.status === 'under_review') {
+        Alert.alert('Verification In Progress', 'Your documents are currently undergoing safety compliance review. Our team cross-checks every record before approving.');
+      } else {
+        Alert.alert('Verification Required', 'Please submit your Driving License and Vehicle RC documents.');
+      }
+    } finally {
+      setIsCheckingStatus(false);
+    }
+  };
 
   useEffect(() => {
     let isMounted = true;
@@ -113,6 +131,17 @@ export default function PublishRideScreen() {
   const totalNetEarnings = driverNetPerSeat * seatsAvailable;
 
   const handlePublish = async () => {
+    // 0. Strict KYC Approval Gate
+    if (kycProfile?.status !== 'verified') {
+      Alert.alert(
+        'Driver Verification Required',
+        kycProfile?.status === 'under_review'
+          ? 'Your documents have been submitted and are under review by our compliance team. You can publish rides as soon as we cross-check and approve your records.'
+          : 'Under Indian Motor Vehicles Guidelines, you must submit your Driving License and Vehicle RC before publishing a ride.'
+      );
+      return;
+    }
+
     // 1. Validate Driver Identity
     if (!driverName.trim()) {
       Alert.alert('Required Field', 'Please provide your Full Legal Name as the driver.');
@@ -279,8 +308,122 @@ export default function PublishRideScreen() {
             </View>
           </View>
 
-          {/* Section 1: Driver Identity Verification */}
-          <View style={styles.card}>
+          {/* KYC Gate: Displayed when driver is NOT verified yet */}
+          {kycProfile?.status !== 'verified' ? (
+            <View style={styles.gateContainer}>
+              <View
+                style={[
+                  styles.gateCard,
+                  kycProfile?.status === 'under_review'
+                    ? styles.gateCardReview
+                    : styles.gateCardPending,
+                ]}
+              >
+                <View
+                  style={[
+                    styles.gateIconCircle,
+                    kycProfile?.status === 'under_review'
+                      ? styles.gateIconCircleReview
+                      : styles.gateIconCirclePending,
+                  ]}
+                >
+                  <Ionicons
+                    name={
+                      kycProfile?.status === 'under_review' ? 'time' : 'shield-checkmark'
+                    }
+                    size={36}
+                    color={
+                      kycProfile?.status === 'under_review' ? '#0284C7' : '#D97706'
+                    }
+                  />
+                </View>
+
+                <Text style={styles.gateTitle}>
+                  {kycProfile?.status === 'under_review'
+                    ? 'Verification Under Review'
+                    : 'Driver Verification Required'}
+                </Text>
+
+                <Text style={styles.gateDescription}>
+                  {kycProfile?.status === 'under_review'
+                    ? 'Your documents have been submitted to the NEXORA Safety & Compliance team. We cross-check every Driving License and Vehicle RC against government registries. As soon as our team approves your profile, your Publish Ride studio will unlock automatically.'
+                    : 'To ensure passenger safety and comply with Motor Vehicles Act regulations, all drivers must submit a valid Government Driving License and private White-Plate Vehicle RC before publishing a ride.'}
+                </Text>
+
+                {kycProfile?.status === 'under_review' ? (
+                  <View style={styles.gateDetailsBox}>
+                    <View style={styles.gateDetailRow}>
+                      <Ionicons name="card-outline" size={16} color="#0284C7" />
+                      <Text style={styles.gateDetailText}>
+                        DL: {kycProfile.drivingLicenseNumber || 'Submitted'}
+                      </Text>
+                      <View style={styles.gateStatusBadge}>
+                        <Text style={styles.gateStatusBadgeText}>Pending Admin OK</Text>
+                      </View>
+                    </View>
+                    <View style={styles.gateDetailRow}>
+                      <Ionicons name="car-outline" size={16} color="#0284C7" />
+                      <Text style={styles.gateDetailText}>
+                        RC: {kycProfile.vehicle?.registrationNumber || 'Submitted'}
+                      </Text>
+                      <View style={styles.gateStatusBadge}>
+                        <Text style={styles.gateStatusBadgeText}>Pending Admin OK</Text>
+                      </View>
+                    </View>
+                  </View>
+                ) : (
+                  <View style={styles.gateRequirementsBox}>
+                    <View style={styles.gateReqItem}>
+                      <Ionicons name="checkmark-circle" size={16} color="#059669" />
+                      <Text style={styles.gateReqText}>1. Government Driving License (DL)</Text>
+                    </View>
+                    <View style={styles.gateReqItem}>
+                      <Ionicons name="checkmark-circle" size={16} color="#059669" />
+                      <Text style={styles.gateReqText}>2. Private White-Plate Vehicle (RC)</Text>
+                    </View>
+                    <View style={styles.gateReqItem}>
+                      <Ionicons name="checkmark-circle" size={16} color="#059669" />
+                      <Text style={styles.gateReqText}>3. Driver Identity Selfie Confirmation</Text>
+                    </View>
+                  </View>
+                )}
+
+                <TouchableOpacity
+                  style={styles.gatePrimaryBtn}
+                  onPress={() => router.push('/driver-verification' as any)}
+                  activeOpacity={0.88}
+                >
+                  <Ionicons name="document-attach" size={18} color="#FFFFFF" />
+                  <Text style={styles.gatePrimaryBtnText}>
+                    {kycProfile?.status === 'under_review'
+                      ? 'View Uploaded Documents'
+                      : 'Submit Documents for Verification'}
+                  </Text>
+                </TouchableOpacity>
+
+                {kycProfile?.status === 'under_review' && (
+                  <TouchableOpacity
+                    style={styles.gateSecondaryBtn}
+                    onPress={handleRefreshKycStatus}
+                    disabled={isCheckingStatus}
+                    activeOpacity={0.8}
+                  >
+                    {isCheckingStatus ? (
+                      <ActivityIndicator size="small" color={colors.primary} />
+                    ) : (
+                      <>
+                        <Ionicons name="refresh" size={16} color={colors.primary} />
+                        <Text style={styles.gateSecondaryBtnText}>Check if Admin Approved</Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                )}
+              </View>
+            </View>
+          ) : (
+            <>
+              {/* Section 1: Driver Identity Verification */}
+              <View style={styles.card}>
             <View style={styles.sectionHeaderRow}>
               <Text style={styles.sectionTitle}>1. Verified Driver Details</Text>
               <View style={styles.complianceChip}>
@@ -629,6 +772,8 @@ export default function PublishRideScreen() {
               </>
             )}
           </TouchableOpacity>
+            </>
+          )}
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -922,5 +1067,137 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSizes.md,
     fontWeight: typography.fontWeights.bold,
     color: '#FFFFFF',
+  },
+
+  /* KYC Gate */
+  gateContainer: {
+    marginVertical: spacing.md,
+  },
+  gateCard: {
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.xxl,
+    padding: spacing.xl,
+    alignItems: 'center',
+    borderWidth: 1.5,
+    ...shadows.md,
+  },
+  gateCardPending: {
+    borderColor: '#F59E0B',
+    backgroundColor: '#FFFDF5',
+  },
+  gateCardReview: {
+    borderColor: '#0284C7',
+    backgroundColor: '#F0F9FF',
+  },
+  gateIconCircle: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.md,
+  },
+  gateIconCirclePending: {
+    backgroundColor: '#FEF3C7',
+  },
+  gateIconCircleReview: {
+    backgroundColor: '#E0F2FE',
+  },
+  gateTitle: {
+    fontSize: typography.fontSizes.lg,
+    fontWeight: typography.fontWeights.heavy,
+    color: colors.textPrimary,
+    textAlign: 'center',
+    marginBottom: spacing.xs,
+  },
+  gateDescription: {
+    fontSize: typography.fontSizes.sm,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: spacing.lg,
+  },
+  gateDetailsBox: {
+    width: '100%',
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.lg,
+    padding: spacing.md,
+    marginBottom: spacing.lg,
+    borderWidth: 1,
+    borderColor: '#BAE6FD',
+    gap: spacing.sm,
+  },
+  gateDetailRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  gateDetailText: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: typography.fontWeights.semibold,
+    color: colors.textPrimary,
+  },
+  gateStatusBadge: {
+    backgroundColor: '#E0F2FE',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: borderRadius.pill,
+  },
+  gateStatusBadgeText: {
+    fontSize: 10,
+    fontWeight: typography.fontWeights.bold,
+    color: '#0284C7',
+  },
+  gateRequirementsBox: {
+    width: '100%',
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.lg,
+    padding: spacing.md,
+    marginBottom: spacing.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    gap: 8,
+  },
+  gateReqItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  gateReqText: {
+    fontSize: 12,
+    fontWeight: typography.fontWeights.medium,
+    color: colors.textPrimary,
+  },
+  gatePrimaryBtn: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.primary,
+    paddingVertical: spacing.md,
+    borderRadius: borderRadius.pill,
+    gap: spacing.xs,
+    ...shadows.sm,
+  },
+  gatePrimaryBtnText: {
+    fontSize: typography.fontSizes.sm,
+    fontWeight: typography.fontWeights.bold,
+    color: '#FFFFFF',
+  },
+  gateSecondaryBtn: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: spacing.sm,
+    borderRadius: borderRadius.pill,
+    gap: spacing.xs,
+    marginTop: spacing.sm,
+  },
+  gateSecondaryBtnText: {
+    fontSize: typography.fontSizes.xs,
+    fontWeight: typography.fontWeights.bold,
+    color: colors.primary,
   },
 });

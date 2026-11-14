@@ -44,6 +44,7 @@
   },
   "scripts": {
     "start": "expo start",
+    "build": "expo export -p web",
     "test": "node ./scripts/test-validation.js",
     "android": "expo start --android",
     "ios": "expo start --ios",

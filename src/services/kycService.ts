@@ -13,6 +13,7 @@ export interface DriverKycProfile {
   userId: string;
   fullName: string;
   phone: string;
+  avatarUrl?: string;
   status: KycStatus;
   drivingLicenseNumber: string;
   drivingLicenseExpiry: string;
@@ -36,6 +37,7 @@ export interface UserPersonalProfile {
   fullName: string;
   phone: string;
   email: string;
+  avatarUrl?: string;
 }
 
 // Clean production keys - no legacy demo data
@@ -78,6 +80,7 @@ class KycService {
       fullName: '',
       phone: '',
       email: '',
+      avatarUrl: '',
     };
   }
 

@@ -1,8 +1,11 @@
 /**
  * NEXORA RIDE — Smart Map Wrapper
  *
- * Renders NexoraMap (Google Maps) with automatic fallback to MapFallback
- * when the native map fails to load (no API key, Expo Go, etc).
+ * Web  → NexoraMap.web.tsx (Leaflet + OpenStreetMap — interactive tiles)
+ * Native (dev build) → NexoraMap.tsx (Google Maps via react-native-maps)
+ * Expo Go → MapFallback (static placeholder)
+ *
+ * Platform extension resolution handles web vs native automatically.
  */
 
 import React, { useState } from 'react';
@@ -39,9 +42,11 @@ export const SmartMap: React.FC<SmartMapProps> = ({
 }) => {
   const [mapError, setMapError] = useState(false);
   const isExpoGo = Constants.appOwnership === AppOwnership.Expo;
-  const isWeb = Platform.OS === 'web';
 
-  if (forceFallback || mapError || isExpoGo || isWeb) {
+  // On web, NexoraMap.web.tsx is auto-resolved via platform extension
+  // and uses Leaflet + OpenStreetMap — no native crash possible.
+  // Only fall back in Expo Go (native) or on explicit error/force.
+  if (forceFallback || mapError || isExpoGo) {
     return (
       <MapFallback
         pickup={pickup}

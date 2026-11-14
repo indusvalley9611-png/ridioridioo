@@ -6,6 +6,7 @@
  */
 
 import React, { useState } from 'react';
+import { Platform } from 'react-native';
 import Constants, { AppOwnership } from 'expo-constants';
 import type { LatLng, RouteInfo } from '@/models/types';
 import { NexoraMap } from './NexoraMap';
@@ -38,8 +39,9 @@ export const SmartMap: React.FC<SmartMapProps> = ({
 }) => {
   const [mapError, setMapError] = useState(false);
   const isExpoGo = Constants.appOwnership === AppOwnership.Expo;
+  const isWeb = Platform.OS === 'web';
 
-  if (forceFallback || mapError || isExpoGo) {
+  if (forceFallback || mapError || isExpoGo || isWeb) {
     return (
       <MapFallback
         pickup={pickup}

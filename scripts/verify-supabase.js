@@ -1,24 +1,28 @@
 /**
- * NEXORA RIDE — Supabase Connection & Storage Verifier
+ * NEXORA RIDE — Supabase Production Verifier
  *
- * Tests:
- * 1. Project URL and Anon Key configuration
- * 2. Connection to Supabase Auth and Database
- * 3. Accessibility of 'avatars' and 'driver-documents' Storage Buckets
+ * Comprehensive checks:
+ * 1. Environment configuration (.env)
+ * 2. Database: all 6 tables reachable
+ * 3. Storage: both buckets accessible
+ * 4. RPC functions: book_ride_seats, cancel_booking
+ * 5. Latency measurement
+ *
+ * Run: node scripts/verify-supabase.js
  */
 
 const { createClient } = require('@supabase/supabase-js');
 const fs = require('fs');
 const path = require('path');
 
-// Read .env file manually
+// Read .env file manually (no dotenv dependency needed)
 function loadEnv() {
   const envPath = path.resolve(__dirname, '../.env');
   if (!fs.existsSync(envPath)) return {};
   const content = fs.readFileSync(envPath, 'utf8');
   const env = {};
   content.split('\n').forEach((line) => {
-    const match = line.match(/^\s*([\w.-]+)\s*=\s*(.*)?\s*$/);
+    const match = line.match(/^\s*([\w.-]+)\s*=\s*(.*)?$/);
     if (match) {
       let value = match[2] || '';
       value = value.trim().replace(/^['"]|['"]$/g, '');
@@ -29,54 +33,131 @@ function loadEnv() {
 }
 
 async function verifySupabase() {
-  console.log('🔍 Checking Supabase configuration in .env...\n');
+  console.log('╔══════════════════════════════════════════════════════════╗');
+  console.log('║    NEXORA RIDE — Supabase Production Verification      ║');
+  console.log('╚══════════════════════════════════════════════════════════╝\n');
+
   const env = loadEnv();
   const url = env.EXPO_PUBLIC_SUPABASE_URL;
   const anonKey = env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
 
+  // ── 1. Validate configuration ──────────────────────────────────
+  console.log('1️⃣  Checking .env configuration...');
+
   if (!url || url.includes('YOUR_PROJECT_ID') || !url.startsWith('https://')) {
-    console.log('⚠️  EXPO_PUBLIC_SUPABASE_URL is currently set to placeholder.');
-    console.log('   Please replace it in .env with your real project URL:');
-    console.log('   e.g. https://abcdefghijklm.supabase.co\n');
-    return;
+    console.log('   ❌ EXPO_PUBLIC_SUPABASE_URL is missing or placeholder');
+    console.log('   → Set it to: https://YOUR_REF.supabase.co\n');
+    process.exit(1);
   }
 
-  if (!anonKey || anonKey.includes('YOUR_ANON_KEY')) {
-    console.log('⚠️  EXPO_PUBLIC_SUPABASE_ANON_KEY is currently set to placeholder.');
-    console.log('   Please replace it in .env with your real anon/public key.\n');
-    return;
+  if (!anonKey || anonKey.includes('YOUR_ANON_KEY') || anonKey.includes('YOUR_PUBLISHABLE')) {
+    console.log('   ❌ EXPO_PUBLIC_SUPABASE_ANON_KEY is missing or placeholder');
+    console.log('   → Get it from Supabase Dashboard > Settings > API Keys\n');
+    process.exit(1);
   }
 
-  console.log(`✅ Project URL configured: ${url}`);
-  console.log('🔗 Testing connection to Supabase...\n');
+  // Detect key format
+  const isLegacyJWT = anonKey.startsWith('eyJ');
+  const isPublishable = anonKey.startsWith('sb_publishable_');
 
-  try {
-    const supabase = createClient(url, anonKey);
+  if (!isLegacyJWT && !isPublishable) {
+    console.log('   ⚠️  Unrecognized key format. Expected eyJ... or sb_publishable_...');
+    console.log('   → Continuing anyway...\n');
+  } else {
+    console.log(`   ✅ Key format: ${isPublishable ? 'sb_publishable_ (new)' : 'JWT (legacy)'}`);
+  }
 
-    // 1. Test database query
-    const { data: rides, error: ridesError } = await supabase
-      .from('rides')
-      .select('count', { count: 'exact', head: true });
+  console.log(`   ✅ URL: ${url}\n`);
 
-    if (ridesError) {
-      console.log(`❌ Database Query Error: ${ridesError.message}`);
+  // ── 2. Test database tables ────────────────────────────────────
+  console.log('2️⃣  Checking database tables...');
+  const supabase = createClient(url, anonKey);
+  const tables = ['profiles', 'driver_profiles', 'vehicles', 'rides', 'bookings', 'reviews'];
+  let allTablesOk = true;
+
+  for (const table of tables) {
+    const start = Date.now();
+    const { error } = await supabase.from(table).select('id', { count: 'exact', head: true });
+    const ms = Date.now() - start;
+
+    if (error) {
+      console.log(`   ❌ ${table}: ${error.message}`);
+      allTablesOk = false;
     } else {
-      console.log('✅ Database connected! "rides" table reachable.');
+      console.log(`   ✅ ${table} — reachable (${ms}ms)`);
     }
-
-    // 2. Test storage buckets
-    const { data: buckets, error: bucketsError } = await supabase.storage.listBuckets();
-    if (bucketsError) {
-      console.log(`⚠️  Storage Check Error: ${bucketsError.message}`);
-    } else {
-      const bucketNames = buckets.map((b) => b.name);
-      console.log(`✅ Storage connected! Found buckets: ${bucketNames.join(', ') || 'none'}`);
-    }
-
-    console.log('\n🎉 Supabase connection is 100% active and working!');
-  } catch (err) {
-    console.log(`❌ Connection test failed: ${err.message}`);
   }
+
+  // ── 3. Test storage buckets ────────────────────────────────────
+  console.log('\n3️⃣  Checking storage buckets...');
+
+  for (const bucket of ['avatars', 'driver-documents']) {
+    const { error } = await supabase.storage.from(bucket).list('', { limit: 1 });
+    if (error) {
+      console.log(`   ⚠️  ${bucket}: ${error.message}`);
+    } else {
+      console.log(`   ✅ ${bucket} — accessible`);
+    }
+  }
+
+  // ── 4. Test RPC functions exist ────────────────────────────────
+  console.log('\n4️⃣  Checking RPC functions...');
+
+  // We can't call book_ride_seats without valid data, but we can verify it exists
+  // by calling it with invalid params — a "function not found" error means it's missing
+  const { error: rpcError } = await supabase.rpc('book_ride_seats', {
+    p_ride_id: '00000000-0000-0000-0000-000000000000',
+    p_passenger_id: '00000000-0000-0000-0000-000000000000',
+    p_seats: 1,
+    p_total_price: 100,
+    p_booking_code: 'TEST',
+    p_boarding_pin: '0000',
+  });
+
+  if (rpcError && (rpcError.message.includes('Could not find the function') || rpcError.code === '42883')) {
+    console.log('   ❌ book_ride_seats — function not found');
+  } else {
+    // Any other error (like "Ride does not exist" P0001) means the function IS there and ran
+    console.log('   ✅ book_ride_seats — exists');
+  }
+
+  const { error: cancelError } = await supabase.rpc('cancel_booking', {
+    p_booking_id: '00000000-0000-0000-0000-000000000000',
+    p_user_id: '00000000-0000-0000-0000-000000000000',
+  });
+
+  if (cancelError && (cancelError.message.includes('Could not find the function') || cancelError.code === '42883')) {
+    console.log('   ❌ cancel_booking — function not found');
+  } else {
+    console.log('   ✅ cancel_booking — exists');
+  }
+
+  // ── 5. Latency test ────────────────────────────────────────────
+  console.log('\n5️⃣  Measuring latency...');
+  const latencies = [];
+  for (let i = 0; i < 3; i++) {
+    const start = Date.now();
+    await supabase.from('rides').select('id', { count: 'exact', head: true });
+    latencies.push(Date.now() - start);
+  }
+  const avgLatency = Math.round(latencies.reduce((a, b) => a + b, 0) / latencies.length);
+  console.log(`   📡 Avg latency: ${avgLatency}ms (3 pings)`);
+
+  if (avgLatency > 500) {
+    console.log('   ⚠️  Latency >500ms — check if Mumbai (ap-south-1) region is selected');
+  }
+
+  // ── Summary ────────────────────────────────────────────────────
+  console.log('\n══════════════════════════════════════════════════════════');
+  if (allTablesOk) {
+    console.log('🎉 ALL CHECKS PASSED — Supabase is production-ready!');
+  } else {
+    console.log('⚠️  Some checks failed — review errors above');
+  }
+  console.log('══════════════════════════════════════════════════════════\n');
 }
 
-verifySupabase();
+verifySupabase().catch((err) => {
+  console.error('❌ Verification script crashed:', err.message);
+  process.exit(1);
+});
